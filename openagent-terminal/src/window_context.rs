@@ -767,7 +767,7 @@ let rt_res =
             #[cfg(not(windows))]
             shell_pid: self.shell_pid,
             ai_runtime: self.ai_runtime.as_mut(),
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             components: self.components.as_ref(),
             workspace: &mut self.workspace,
             ide: &mut self.ide,

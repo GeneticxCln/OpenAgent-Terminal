@@ -68,7 +68,7 @@ use crate::ipc::{self, SocketReply};
 use crate::logging::{LOG_TARGET_CONFIG, LOG_TARGET_WINIT};
 use crate::message_bar::{Message, MessageBuffer};
 use crate::scheduler::{Scheduler, TimerId, Topic};
-#[cfg(feature = "never")]
+#[cfg(feature = "plugins")]
 use serde_json::json;
 use crate::window_context::WindowContext;
 use openagent_terminal_core::event::CommandBlockEvent as CoreCommandBlockEvent;
@@ -475,7 +475,7 @@ Processor {
                 if let Some(components) = &comp_clone {
                     window_context.set_components(components.clone());
                     // Wire Blocks -> Workspace PTY collection when Warp is enabled and initialized
-                    #[cfg(feature = "never")]
+                    #[cfg(feature = "plugins")]
                     {
                         if window_context.config().workspace.warp_style {
                             if let Some(warp) = &window_context.workspace.warp {
@@ -750,7 +750,7 @@ Processor {
     }
 }
 
-#[cfg(feature = "never")]
+#[cfg(feature = "plugins")]
 impl Processor {
     fn process_blocks_search_perform(&mut self, query: String, window_id: WindowId) {
         self.process_blocks_search_with_state(query, window_id, None);
@@ -875,7 +875,7 @@ impl Processor {
 }
 
 
-#[cfg(feature = "never")]
+#[cfg(feature = "plugins")]
 impl Processor {
     fn notebooks_open(&mut self, window_id: WindowId) {
         if let Some(win) = self.windows.get_mut(&window_id) {
@@ -1169,11 +1169,11 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
             // Notebooks UI events
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksOpen, Some(window_id)) => {
                 self.notebooks_open(*window_id);
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksList(items), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
                     win.display.notebooks_panel.notebooks = items;
@@ -1185,7 +1185,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksSelect(id), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
                     win.display.notebooks_panel.selected_notebook = Some(id.clone());
@@ -1193,7 +1193,7 @@ impl ApplicationHandler<Event> for Processor {
                 }
                 self.notebooks_load_cells(*window_id, id);
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksCells(cells), Some(window_id)) => {
                 if let Some(win) = self.windows.get_mut(window_id) {
                     win.display.notebooks_panel.cells = cells;
@@ -1203,7 +1203,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksRunCell(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1219,7 +1219,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksRunNotebook(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1235,7 +1235,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksAddCommand(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1263,7 +1263,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksAddMarkdown(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1285,7 +1285,7 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
 
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksDeleteCell(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1302,7 +1302,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksConvertCellToMarkdown(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1322,7 +1322,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksConvertCellToCommand(cell_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1342,7 +1342,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksExportNotebook(nb_id), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1366,7 +1366,7 @@ impl ApplicationHandler<Event> for Processor {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::NotebooksEditApply { cell_id, content }, Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(nb) = &components.notebook_manager {
@@ -1500,11 +1500,11 @@ impl ApplicationHandler<Event> for Processor {
                 }
             }
             // Blocks search events handled at processor level
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::BlocksSearchPerform(query), Some(window_id)) => {
                 self.process_blocks_search_perform(query, *window_id);
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::BlocksSearchResults(items), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.display.blocks_search.results = items;
@@ -2395,7 +2395,7 @@ EventType::WorkflowsProgressUpdate {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::PaletteRequestPluginCommands, Some(_window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
@@ -2408,7 +2408,7 @@ EventType::WorkflowsProgressUpdate {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::PluginsRunCommand { plugin, command }, Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
@@ -2472,7 +2472,7 @@ let evt = PluginEvent {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::PluginsSearchPerform(query), Some(window_id)) => {
                 // Build items from loaded plugins and discovered files; simple case-insensitive match
                 if let Some(components) = &self.components {
@@ -2530,7 +2530,7 @@ let evt = PluginEvent {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::PluginsSearchResults(items), Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.display.plugins_panel.results = items;
@@ -2540,7 +2540,7 @@ let evt = PluginEvent {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::PluginsLoadFromPath(path), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
@@ -2576,7 +2576,7 @@ let evt = PluginEvent {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::PluginsUnloadByName(name), Some(window_id)) => {
                 if let Some(components) = &self.components {
                     if let Some(pm) = &components.plugin_manager {
@@ -2612,7 +2612,7 @@ let evt = PluginEvent {
                     }
                 }
             }
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::PluginsInstallFromUrl { url }, Some(window_id)) => {
                 if let Some(components) = &self.components {
                     // Compute user plugins dir similar to initialize_plugin_manager
@@ -2824,21 +2824,21 @@ pub enum EventType {
     BlocksStarredUpdated { id: String, starred: bool },
 
     // Notebooks panel events (UI + data)
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     NotebooksOpen,
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     NotebooksList(Vec<NotebookListItem>),
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     NotebooksSelect(String), // notebook id
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     NotebooksCells(Vec<NotebookCellItem>),
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     NotebooksRunCell(String), // cell id
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     NotebooksRunNotebook(String), // notebook id
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     NotebooksAddCommand(String), // notebook id
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     NotebooksAddMarkdown(String), // notebook id
     // New editing and export actions
     NotebooksDeleteCell(String),            // cell id
@@ -2852,25 +2852,25 @@ pub enum EventType {
 
 
     // Plugin palette integration and execution
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     PaletteRequestPluginCommands,
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     PaletteAppendPluginCommands(Vec<(String, String, Option<String>)>), // (plugin, command, subtitle)
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     PluginsRunCommand {
         plugin: String,
         command: String,
     },
     // Plugins panel events
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     PluginsSearchPerform(String),
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     PluginsSearchResults(Vec<crate::display::plugin_panel::PluginItem>),
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     PluginsLoadFromPath(String), // path to .wasm
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     PluginsUnloadByName(String), // plugin id/name
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     PluginsInstallFromUrl {
         url: String,
     },
@@ -3136,7 +3136,7 @@ pub struct ActionContext<'a, N, T> {
     #[cfg(not(windows))]
     pub shell_pid: u32,
     pub ai_runtime: Option<&'a mut crate::ai_runtime::AiRuntime>,
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     pub components: Option<&'a std::sync::Arc<InitializedComponents>>,
     pub workspace: &'a mut crate::workspace::WorkspaceManager,
     /// Last started command captured during CommandStart
@@ -3707,7 +3707,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             .send_event(Event::new(EventType::PaletteRequestWorkflows, self.display.window.id()));
 
         // Ask to append plugin commands if plugin system is enabled
-        #[cfg(feature = "never")]
+        #[cfg(feature = "plugins")]
         {
             let _ = self.event_proxy.send_event(Event::new(
                 EventType::PaletteRequestPluginCommands,
@@ -3983,9 +3983,9 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                         self.paste(&cmd, true);
                     }
                 }
-                #[cfg(feature = "never")]
+                #[cfg(feature = "plugins")]
                 PaletteEntry::PluginCommand { plugin, command } => {
-                    #[cfg(feature = "never")]
+                    #[cfg(feature = "plugins")]
                     {
                         // Security Lens gating is enforced inside the plugin host when plugins execute external commands.
                         let _ = self.event_proxy.send_event(Event::new(
@@ -4084,7 +4084,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Blocks Search panel controls
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn open_blocks_search_panel(&mut self) {
         if self.palette_active() {
             self.display.palette.save_mru_to_config(self.config);
@@ -4094,7 +4094,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(not(feature = "never"))]
+    #[cfg(not(feature = "plugins"))]
     fn open_blocks_search_panel(&mut self) {
         if self.palette_active() {
             self.display.palette.save_mru_to_config(self.config);
@@ -4108,29 +4108,29 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn close_blocks_search_panel(&mut self) {
         self.display.blocks_search.close();
         self.mark_dirty();
     }
 
-    #[cfg(not(feature = "never"))]
+    #[cfg(not(feature = "plugins"))]
     fn close_blocks_search_panel(&mut self) {
         self.display.native_search.active = false;
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_active(&self) -> bool {
         self.display.blocks_search.active
     }
 
-    #[cfg(not(feature = "never"))]
+    #[cfg(not(feature = "plugins"))]
     fn blocks_search_active(&self) -> bool {
         self.display.native_search.active
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_input(&mut self, c: char) {
         self.display.blocks_search.query.push(c);
         self.display.blocks_search.selected = 0;
@@ -4146,7 +4146,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(not(feature = "never"))]
+    #[cfg(not(feature = "plugins"))]
     fn blocks_search_input(&mut self, c: char) {
         if !self.display.native_search.active { return; }
         if c.is_control() { return; }
@@ -4159,7 +4159,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_backspace(&mut self) {
         self.display.blocks_search.query.pop();
         self.display.blocks_search.selected = 0;
@@ -4175,7 +4175,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, BLOCKS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(not(feature = "never"))]
+    #[cfg(not(feature = "plugins"))]
     fn blocks_search_backspace(&mut self) {
         if !self.display.native_search.active { return; }
         self.display.native_search.query.pop();
@@ -4187,7 +4187,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(not(feature = "never"))]
+    #[cfg(not(feature = "plugins"))]
     fn blocks_search_toggle_star_selected(&mut self) {
         if !self.display.native_search.active { return; }
         let idx = self.display.native_search.selected_index;
@@ -4196,13 +4196,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_move_selection(&mut self, delta: isize) {
         self.display.blocks_search.move_selection(delta);
         self.mark_dirty();
     }
 
-    #[cfg(not(feature = "never"))]
+    #[cfg(not(feature = "plugins"))]
     fn blocks_search_move_selection(&mut self, delta: isize) {
         if !self.display.native_search.active { return; }
         let len = self.display.native_search.results.len();
@@ -4215,7 +4215,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_confirm(&mut self) {
         if !self.display.blocks_search.results.is_empty() {
             let idx = self
@@ -4230,7 +4230,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(not(feature = "never"))]
+    #[cfg(not(feature = "plugins"))]
     fn blocks_search_confirm(&mut self) {
         if !self.display.native_search.active { return; }
         // Extract selection data
@@ -4258,62 +4258,62 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_cancel(&mut self) {
         self.display.blocks_search.close();
         self.mark_dirty();
     }
 
-    #[cfg(not(feature = "never"))]
+    #[cfg(not(feature = "plugins"))]
     fn blocks_search_cancel(&mut self) {
         self.display.native_search.active = false;
         self.mark_dirty();
     }
 
     // Enhanced blocks search functionality
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_cycle_mode(&mut self) {
         self.display.blocks_search.cycle_search_mode();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_cycle_sort_field(&mut self) {
         self.display.blocks_search.cycle_sort_field();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_toggle_sort_order(&mut self) {
         self.display.blocks_search.toggle_sort_order();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_toggle_starred(&mut self) {
         self.display.blocks_search.toggle_starred_filter();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_clear_filters(&mut self) {
         self.display.blocks_search.clear_all_filters();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_next_page(&mut self) {
         self.display.blocks_search.next_page();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_prev_page(&mut self) {
         self.display.blocks_search.prev_page();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_toggle_star_selected(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let block_id = item.id.clone();
@@ -4323,13 +4323,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_show_actions(&mut self) {
         self.display.blocks_search.open_actions_menu();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_delete_selected(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let block_id = item.id.clone();
@@ -4345,14 +4345,14 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_copy_command(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             self.clipboard.store(ClipboardType::Clipboard, item.command.clone());
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_copy_output(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
@@ -4361,7 +4361,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_rerun_selected(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let command = item.command.clone();
@@ -4372,7 +4372,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_insert_heredoc(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
@@ -4384,13 +4384,13 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_show_help(&mut self) {
         self.display.blocks_search.open_help();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_export_selected(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let content = format!(
@@ -4402,14 +4402,14 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_toggle_tag(&mut self) {
         // Placeholder for tag functionality - would need tag management system
         // For now, just mark dirty to acknowledge the input
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_copy_both(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let both = format!(
@@ -4421,7 +4421,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_insert_command(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let command = item.command.clone();
@@ -4429,7 +4429,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_view_output(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
@@ -4440,7 +4440,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_share_block(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             let share_content = format!(
@@ -4453,7 +4453,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_create_snippet(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             // Create snippet from command - would integrate with snippet system
@@ -4462,7 +4462,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_insert_heredoc_custom(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
@@ -4477,7 +4477,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_insert_json_heredoc(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
@@ -4490,7 +4490,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_insert_shell_heredoc(&mut self) {
         if let Some(item) = self.display.blocks_search.get_selected_item() {
             if !item.output.is_empty() {
@@ -4506,12 +4506,12 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Actions menu support
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_actions_menu_active(&self) -> bool {
         self.display.blocks_search.actions_menu_active()
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_execute_action(&mut self) {
         if let Some(action) = self.display.blocks_search.get_selected_action() {
             use crate::display::blocks_search_actions::BlockAction;
@@ -4562,31 +4562,31 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_close_actions_menu(&mut self) {
         self.display.blocks_search.close_actions_menu();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_move_actions_selection(&mut self, delta: isize) {
         self.display.blocks_search.move_actions_selection(delta);
         self.mark_dirty();
     }
 
     // Help overlay support
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_help_active(&self) -> bool {
         self.display.blocks_search.help_active()
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_close_help(&mut self) {
         self.display.blocks_search.close_help();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn blocks_search_navigate_help(&mut self, forward: bool) {
         self.display.blocks_search.navigate_help(forward);
         self.mark_dirty();
@@ -4607,7 +4607,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             .send_event(Event::new(EventType::WorkflowsSearchPerform(q), self.display.window.id()));
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn open_plugins_panel(&mut self) {
         if self.palette_active() {
             self.display.palette.save_mru_to_config(self.config);
@@ -4627,7 +4627,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn plugins_panel_cancel(&mut self) {
         self.display.plugins_panel.close();
         self.mark_dirty();
@@ -4637,7 +4637,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.display.workflows_panel.active
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn plugins_panel_active(&self) -> bool {
         self.display.plugins_panel.active
     }
@@ -4655,7 +4655,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn plugins_panel_input(&mut self, c: char) {
         self.display.plugins_panel.query.push(c);
         self.display.plugins_panel.selected = 0;
@@ -4682,7 +4682,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.scheduler.schedule(evt, WORKFLOWS_SEARCH_DEBOUNCE, false, timer_id);
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn plugins_panel_backspace(&mut self) {
         self.display.plugins_panel.query.pop();
         self.display.plugins_panel.selected = 0;
@@ -4701,7 +4701,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn plugins_panel_move_selection(&mut self, delta: isize) {
         self.display.plugins_panel.move_selection(delta);
         self.mark_dirty();
@@ -4722,7 +4722,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn plugins_panel_confirm(&mut self) {
         // If query looks like a URL, request install from URL
         let q = self.display.plugins_panel.query.trim().to_string();
@@ -5001,7 +5001,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     // Notebooks panel controls (feature = "blocks")
-        #[cfg(feature = "never")]
+        #[cfg(feature = "plugins")]
     fn open_notebooks_panel(&mut self) {
         if self.palette_active() {
             self.display.palette.save_mru_to_config(self.config);
@@ -5015,18 +5015,18 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             .send_event(Event::new(EventType::NotebooksOpen, self.display.window.id()));
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn notebooks_panel_active(&self) -> bool {
         self.display.notebooks_panel.active
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn notebooks_panel_close(&mut self) {
         self.display.notebooks_panel.close();
         self.mark_dirty();
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn notebooks_panel_move_selection(&mut self, delta: isize) {
         use std::cmp::min;
         // If a notebook is selected, move within cells; else move within notebooks
@@ -5077,7 +5077,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn notebooks_panel_confirm(&mut self) {
         // If no notebook selected, treat as selecting the first notebook
         if self.display.notebooks_panel.selected_notebook.is_none() {
@@ -5102,7 +5102,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn notebooks_panel_rerun_selected(&mut self) {
         if !self.display.notebooks_panel.active {
             return;
@@ -5116,7 +5116,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn notebooks_panel_add_command_cell(&mut self) {
         if let Some(ref nb_id) = self.display.notebooks_panel.selected_notebook {
             let _ = self.event_proxy.send_event(Event::new(
@@ -5126,7 +5126,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn notebooks_panel_add_markdown_cell(&mut self) {
         if let Some(ref nb_id) = self.display.notebooks_panel.selected_notebook {
             let _ = self.event_proxy.send_event(Event::new(
@@ -5136,7 +5136,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn notebooks_panel_run_all(&mut self) {
         if let Some(ref nb_id) = self.display.notebooks_panel.selected_notebook {
             let _ = self.event_proxy.send_event(Event::new(
@@ -5146,7 +5146,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn notebooks_panel_focus_next(&mut self) {
         if self.display.notebooks_panel.active {
             self.display.notebooks_panel.toggle_focus();
@@ -5154,7 +5154,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn notebooks_panel_focus_prev(&mut self) {
         if self.display.notebooks_panel.active {
             self.display.notebooks_panel.toggle_focus();
@@ -8124,7 +8124,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         }
 
                         // Broadcast plugin hooks for pre/post command and directory changes.
-                        #[cfg(feature = "never")]
+                        #[cfg(feature = "plugins")]
                         if let Some(components) = &self.ctx.components {
                             if let Some(pm) = &components.plugin_manager {
                                 let pm = pm.clone();
@@ -8291,7 +8291,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     self.ctx.display.palette.add_items_unique(items);
                     *self.ctx.dirty = true;
                 }
-                #[cfg(feature = "never")]
+                #[cfg(feature = "plugins")]
                 EventType::PaletteAppendPluginCommands(entries) => {
                     // Convert plugin entries to palette items
                     let items: Vec<PaletteItem> = entries
@@ -8384,7 +8384,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     let mut opened = false;
                     {
                         // Update results
-                        #[cfg(not(feature = "never"))]
+                        #[cfg(not(feature = "plugins"))]
                         {
                             self.ctx.display.blocks_search.results = items;
                             self.ctx.display.blocks_search.active = true;
@@ -8427,12 +8427,12 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     });
                     *self.ctx.dirty = true;
                 }
-                #[cfg(feature = "never")]
+                #[cfg(feature = "plugins")]
                 EventType::BlocksToggleStar(_block_id) => {
                     // Star toggling is handled at the processor level, not in input processor
                     // This event should already be processed there
                 }
-                #[cfg(feature = "never")]
+                #[cfg(feature = "plugins")]
                 EventType::NotebooksOpen
                 | EventType::NotebooksList(_)
                 | EventType::NotebooksSelect(_)
@@ -9302,11 +9302,11 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::WorkflowsCancelParams => {
                     // Params form open/submit/cancel handled at processor level
                 }
-                #[cfg(feature = "never")]
+                #[cfg(feature = "plugins")]
                 EventType::PaletteRequestPluginCommands | EventType::PluginsRunCommand { .. } => {
                     // Already handled at Processor level; ignore here
                 }
-                #[cfg(feature = "never")]
+                #[cfg(feature = "plugins")]
                 EventType::PluginsSearchPerform(_)
                 | EventType::PluginsSearchResults(_)
                 | EventType::PluginsLoadFromPath(_)
@@ -9314,7 +9314,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::PluginsInstallFromUrl { .. } => {
                     // Plugins panel events are handled in the window context processor; nothing to do here
                 }
-                // Notebook events (feature = "never") - stub handling
+                // Notebook events (feature = "plugins") - stub handling
                 EventType::NotebooksDeleteCell(_)
                 | EventType::NotebooksConvertCellToMarkdown(_)
                 | EventType::NotebooksConvertCellToCommand(_)
@@ -9576,13 +9576,13 @@ pub(crate) mod test_posted_events {
     }
 }
 
-#[cfg(all(test, feature = "never"))]
+#[cfg(all(test, feature = "plugins"))]
 mod test_blocks_search_cancel {
     /// Lightweight event delivery helper for tests to emulate ApplicationHandler::user_event
     /// without requiring an ActiveEventLoop.
     pub(crate) fn handle_user_event_for_test(&mut self, event: Event) {
         match (event.payload, event.window_id) {
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             (EventType::BlocksSearchPerform(query), Some(window_id)) => {
                 self.process_blocks_search_perform(query, window_id);
             }

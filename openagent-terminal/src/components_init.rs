@@ -1,4 +1,4 @@
-// Component Initialization Module
+// Production-ready component initialization and integration
 // Integrates WGPU renderer, HarfBuzz, Blocks 2.0, Workflows, and Plugins
 
 #[allow(unused_imports)]
@@ -9,14 +9,14 @@ use tokio::runtime::Runtime;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, warn};
 
-// Import new components
-#[cfg(feature = "never")]
+// Import production-ready components
+#[cfg(feature = "blocks")]
 use crate::blocks_v2::{BlockManager, CreateBlockParams};
-#[cfg(feature = "never")]
+#[cfg(feature = "plugins")]
 use crate::plugins_api::{LogLevel, PluginHost, PluginManager, SignaturePolicy};
 #[cfg(feature = "harfbuzz")]
 use crate::text_shaping::harfbuzz::{HarfBuzzShaper, ShapingConfig};
-#[cfg(feature = "never")]
+#[cfg(feature = "plugins")]
 pub(crate) use crate::plugins_api::{CommandOutput, PluginError};
 
 /// Component initialization configuration
@@ -301,14 +301,14 @@ impl WorkflowEngine {
 pub struct InitializedComponents {
     #[cfg(feature = "harfbuzz")]
     pub text_shaper: Option<Arc<tokio::sync::RwLock<HarfBuzzShaper>>>,
-    #[cfg(feature = "never")]
+    #[cfg(feature = "blocks")]
     pub block_manager: Option<Arc<tokio::sync::RwLock<BlockManager>>>,
-    #[cfg(feature = "never")]
+    #[cfg(feature = "blocks")]
     pub notebook_manager: Option<Arc<tokio::sync::RwLock<crate::notebooks::NotebookManager>>>,
     pub workflow_engine: Option<Arc<WorkflowEngine>>,
-    #[cfg(feature = "never")]
+    #[cfg(feature = "blocks")]
     pub plugin_manager: Option<Arc<PluginManager>>,
-    #[cfg(feature = "never")]
+    #[cfg(feature = "blocks")]
     pub storage: Option<Arc<crate::storage::Storage>>,
     pub runtime: Arc<Runtime>,
 }
@@ -320,19 +320,19 @@ impl std::fmt::Debug for InitializedComponents {
         {
             let _ = ds.field("text_shaper", &self.text_shaper.as_ref().map(|_| "Some"));
         }
-        #[cfg(feature = "never")]
+        #[cfg(feature = "blocks")]
         {
             let _ = ds.field("block_manager", &self.block_manager.as_ref().map(|_| "Some"));
         }
-        #[cfg(feature = "never")]
+        #[cfg(feature = "blocks")]
         {
             let _ = ds.field("workflow_engine", &self.workflow_engine.as_ref().map(|_| "Some"));
         }
-        #[cfg(feature = "never")]
+        #[cfg(feature = "blocks")]
         {
             let _ = ds.field("plugin_manager", &self.plugin_manager.as_ref().map(|_| "Some"));
         }
-        #[cfg(feature = "never")]
+        #[cfg(feature = "blocks")]
         {
             let _ = ds.field("storage", &self.storage.as_ref().map(|_| "Some"));
         }
@@ -374,7 +374,7 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
     };
 
     // Initialize Storage (SQLite) used by blocks/plugins persistence
-    #[cfg(feature = "never")]
+    #[cfg(feature = "blocks")]
     let storage = if config.enable_blocks {
         let db_path = config.data_dir.join("terminal.db");
         match crate::storage::Storage::new(&db_path).await {
@@ -406,7 +406,7 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
     };
 
     // Initialize Blocks 2.0 system
-    #[cfg(feature = "never")]
+    #[cfg(feature = "blocks")]
     let block_manager = if config.enable_blocks {
         let blocks_dir = config.data_dir.join("blocks");
         match BlockManager::new(blocks_dir).await {
@@ -425,7 +425,7 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
     };
 
     // Initialize Notebook manager
-    #[cfg(feature = "never")]
+    #[cfg(feature = "blocks")]
     let notebook_manager = if config.enable_blocks {
         let notebooks_dir = config.data_dir.join("notebooks");
         match crate::notebooks::NotebookManager::new(&notebooks_dir, block_manager.clone()).await {
@@ -460,7 +460,7 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
     };
 
     // Initialize plugin manager
-    #[cfg(feature = "never")]
+    #[cfg(feature = "blocks")]
     let plugin_manager = if config.enable_plugins {
         let plugins_dir = config.data_dir.join("plugins");
         // Plugin policy toggles (Warp-like defaults with env overrides for releases)
@@ -528,14 +528,14 @@ pub async fn initialize_components(config: &ComponentConfig) -> Result<Initializ
     Ok(InitializedComponents {
         #[cfg(feature = "harfbuzz")]
         text_shaper,
-        #[cfg(feature = "never")]
+        #[cfg(feature = "blocks")]
         block_manager,
-        #[cfg(feature = "never")]
+        #[cfg(feature = "blocks")]
         notebook_manager,
         workflow_engine,
-        #[cfg(feature = "never")]
+        #[cfg(feature = "blocks")]
         plugin_manager,
-        #[cfg(feature = "never")]
+        #[cfg(feature = "blocks")]
         storage,
         runtime,
     })
@@ -565,7 +565,7 @@ async fn initialize_harfbuzz() -> Result<HarfBuzzShaper> {
 }
 
 /// Initialize workflow engine
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<WorkflowEngine> {
     let engine = WorkflowEngine::new().context("Failed to create workflow engine")?;
 
@@ -621,7 +621,7 @@ async fn initialize_workflow_engine(config_dir: &std::path::Path) -> Result<Work
     Ok(engine)
 }
 
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 async fn seed_default_workflows(dir: &std::path::Path) -> Result<()> {
     let rust = r#"name: Cargo Build
 version: "1.0.0"
@@ -709,7 +709,7 @@ outputs: []
 }
 
 /// Initialize plugin manager
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 pub(crate) async fn initialize_plugin_manager(
     plugins_dir: PathBuf,
     enforce_signatures: bool,
@@ -810,19 +810,19 @@ pub(crate) async fn initialize_plugin_manager(
 }
 
 /// Terminal plugin host implementation
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 struct TerminalPluginHost {
     storage_dir: PathBuf,
 }
 
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 impl TerminalPluginHost {
     fn new(storage_dir: PathBuf) -> Self {
         Self { storage_dir }
     }
 }
 
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 impl PluginHost for TerminalPluginHost {
     fn log(&self, level: LogLevel, message: &str) {
         match level {
@@ -1019,7 +1019,7 @@ impl<'a> ComponentIntegration<'a> {
     }
 
     /// Create a new block for command execution
-    #[cfg(feature = "never")]
+    #[cfg(feature = "blocks")]
     pub async fn create_command_block(&self, command: String, shell: &str) -> Result<()> {
         if let Some(manager) = &self.components.block_manager {
             let mut manager = manager.write().await;
@@ -1073,7 +1073,7 @@ impl<'a> ComponentIntegration<'a> {
     }
 }
 
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 fn count_trusted_keys(dir: Option<PathBuf>) -> usize {
     if let Some(d) = dir {
         if let Ok(entries) = std::fs::read_dir(d) {
@@ -1086,7 +1086,7 @@ fn count_trusted_keys(dir: Option<PathBuf>) -> usize {
     0
 }
 
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 fn sanitize_key_to_filename(key: &str) -> String {
     let mut s = String::with_capacity(key.len());
     for ch in key.chars() {
@@ -1103,7 +1103,7 @@ fn sanitize_key_to_filename(key: &str) -> String {
     s
 }
 
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 fn write_security_audit_event(
     plugin_id: Option<&str>,
     command: &str,
@@ -1140,7 +1140,7 @@ fn write_security_audit_event(
         .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()))
 }
 
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 fn dir_size_bytes(dir: &std::path::Path) -> Option<u64> {
     let mut total: u64 = 0;
     let rd = std::fs::read_dir(dir).ok()?;
@@ -1157,7 +1157,7 @@ fn dir_size_bytes(dir: &std::path::Path) -> Option<u64> {
     Some(total)
 }
 
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 async fn install_bundled_plugins(dir: &PathBuf) -> Result<(), anyhow::Error> {
     use tokio::fs;
     fs::create_dir_all(dir).await.ok();
@@ -1282,7 +1282,7 @@ timeout_ms=5000
     Ok(())
 }
 
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 fn spawn_plugin_watchers(manager: Arc<PluginManager>, dirs: Vec<PathBuf>) {
     use notify::{
         Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode,
@@ -1393,7 +1393,7 @@ mod tests {
         assert!(config.enable_plugins);
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "blocks")]
     #[tokio::test]
     async fn test_plugins_manager_discovers_and_loads() {
         // Create a temporary plugins dir and a minimal WASM file

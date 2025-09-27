@@ -90,7 +90,7 @@ pub fn set_default_window_id(id: winit::window::WindowId) {
 }
 
 // Security policy accessor used by plugin stubs (feature="never")
-#[cfg(feature = "never")]
+#[cfg(feature = "plugins")]
 pub fn get_security_policy() -> crate::security_lens::SecurityPolicy {
     crate::security_lens::SecurityPolicy::default()
 }

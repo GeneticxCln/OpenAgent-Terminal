@@ -11,9 +11,9 @@ use uuid::Uuid;
 
 pub mod advanced_conversation_features;
 pub mod blitzy_project_context;
-#[cfg(feature = "never")]
+#[cfg(feature = "plugins")]
 pub mod code_generation;
-#[cfg(feature = "never")]
+#[cfg(feature = "plugins")]
 pub mod communication_hub;
 pub mod conversation_manager;
 pub mod enhanced_plugin_system;

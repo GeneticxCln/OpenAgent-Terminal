@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 use chrono::{DateTime, Utc};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -84,18 +84,18 @@ pub struct OutputChunk {
     pub timestamp: OutputTimestamp,
 }
 
-#[cfg(feature = "never")]
+#[cfg(feature = "blocks")]
 type OutputTimestamp = DateTime<Utc>;
-#[cfg(not(feature = "never"))]
+#[cfg(not(feature = "blocks"))]
 type OutputTimestamp = std::time::SystemTime;
 
 #[inline]
 fn now_ts() -> OutputTimestamp {
-    #[cfg(feature = "never")]
+    #[cfg(feature = "blocks")]
     {
         Utc::now()
     }
-    #[cfg(not(feature = "never"))]
+    #[cfg(not(feature = "blocks"))]
     {
         std::time::SystemTime::now()
     }

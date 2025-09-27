@@ -62,7 +62,7 @@ pub mod animation;
 pub mod blocks;
 pub mod blocks_search_actions;
 pub mod blocks_search_panel;
-#[cfg(feature = "never")]
+#[cfg(feature = "plugins")]
 pub mod notebook_panel;
 pub mod color;
 #[cfg(feature = "completions")]
@@ -77,7 +77,7 @@ pub mod editor_overlay;
 pub mod hint;
 pub mod palette;
 pub mod pane_drag_drop;
-#[cfg(feature = "never")]
+#[cfg(feature = "plugins")]
 pub mod plugin_panel;
 pub mod settings_panel;
 pub mod tab_bar;
@@ -588,7 +588,7 @@ pub struct Display {
     pub palette_rows_start_line: Option<usize>,
 
     // Active notebook edit session (temporary file based), if any
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     #[allow(dead_code)]
     pub notebooks_edit_session: Option<crate::display::notebook_panel::NotebookEditSession>,
 
@@ -628,10 +628,10 @@ pub struct Display {
     /// Workflows parameter form overlay state.
     pub workflows_params: workflow_panel::WorkflowParamsState,
     /// Plugins panel state.
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     pub plugins_panel: crate::display::plugin_panel::PluginPanelState,
     /// Notebooks panel state (feature="blocks")
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     pub notebooks_panel: notebook_panel::NotebookPanelState,
 
     /// Settings panel state (for in-app configuration like API keys)
@@ -934,7 +934,7 @@ impl Display {
         if config.workspace.quick_actions.show_palette {
             labels.push("[Palette]");
         }
-        #[cfg(feature = "never")]
+        #[cfg(feature = "plugins")]
         {
             labels.push("[Plugins]");
         }
@@ -1243,7 +1243,7 @@ impl Display {
             // Clean startup tracking
             startup_clean_mode: config.workspace.clean_startup,
             startup_nonempty_seen: false,
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             notebooks_panel: notebook_panel::NotebookPanelState::new(),
             pending_renderer_update: Default::default(),
             composer_focused: false,
@@ -1317,7 +1317,7 @@ ai_current_model: if cfg!(feature = "ai") {
             workflows_panel: workflow_panel::WorkflowsPanelState::new(),
             workflows_progress: Default::default(),
             workflows_params: Default::default(),
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             plugins_panel: crate::display::plugin_panel::PluginPanelState::new(),
             settings_panel: settings_panel::SettingsPanelState::new(),
             quick_actions_press_flash_until: None,
@@ -1338,7 +1338,7 @@ ai_current_model: if cfg!(feature = "ai") {
                 p.load_mru_from_config(config);
                 p
             },
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             notebooks_edit_session: None,
             confirm_overlay: confirm_overlay::ConfirmOverlayState::new(),
             last_mouse_x: 0,
@@ -2001,7 +2001,7 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
     }
 
     // No-op notebooks overlay stub for feature="never" builds
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     fn draw_notebooks_panel_overlay(
         &mut self,
         _config: &UiConfig,
@@ -2833,13 +2833,13 @@ let style = crate::display::modern_ui::WarpTabStyle::from_theme(config);
                 self.draw_workflows_panel_overlay(config, &st);
             }
             // Plugins panel overlay if active
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             if self.plugins_panel.active {
                 let st = self.plugins_panel.clone();
                 self.draw_plugins_panel_overlay(config, &st);
             }
             // Notebooks panel overlay if active
-            #[cfg(feature = "never")]
+            #[cfg(feature = "plugins")]
             if self.notebooks_panel.active {
                 let st = self.notebooks_panel.clone();
                 self.draw_notebooks_panel_overlay(config, &st);

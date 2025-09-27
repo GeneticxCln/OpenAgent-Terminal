@@ -54,12 +54,12 @@ pub enum Topic {
     BlinkTimeout,
     Frame,
     // Debounced Blocks Search typing
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     BlocksSearchTyping,
     // Debounced Workflows Search typing
     WorkflowsSearchTyping,
     // Debounced Plugins Search typing (only when plugins feature is enabled)
-    #[cfg(feature = "never")]
+    #[cfg(feature = "plugins")]
     PluginsSearchTyping,
     // Retain workflows progress overlay briefly after completion
     WorkflowsProgressRetain,
@@ -157,7 +157,7 @@ impl Scheduler {
     }
 }
 
-#[cfg(all(test, feature = "never"))]
+#[cfg(all(test, feature = "plugins"))]
 mod tests {
     use super::*;
     use std::thread::sleep;
@@ -203,7 +203,7 @@ mod tests {
             .any(|e| matches!(e.payload(), crate::event::EventType::BlocksSearchPerform(_))));
 
         // Integration: when components are missing, BlocksSearchPerform should post empty results
-        #[cfg(feature = "never")]
+        #[cfg(feature = "plugins")]
         {
             crate::event::test_posted_events::clear();
             let cfg = crate::config::UiConfig::default();

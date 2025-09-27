@@ -79,5 +79,9 @@ pub mod session_service;
 pub mod session_cli;
 pub mod storage;
 
+// Production-ready plugin system
+#[cfg(feature = "plugins")]
+pub mod plugins_api;
+
 #[cfg(feature = "completions")]
 pub mod completions_spec;

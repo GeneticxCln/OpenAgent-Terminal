@@ -510,30 +510,30 @@ pub trait ActionContext<T: EventListener> {
     fn workflows_params_confirm(&mut self) {}
     fn workflows_params_cancel(&mut self) {}
 
-    // Notebooks panel controls (feature = "never")
-    #[cfg(feature = "never")]
+    // Notebooks panel controls (feature = "plugins")
+    #[cfg(feature = "notebooks")]
     fn open_notebooks_panel(&mut self) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn notebooks_panel_active(&self) -> bool {
         false
     }
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn notebooks_panel_close(&mut self) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn notebooks_panel_move_selection(&mut self, _delta: isize) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn notebooks_panel_confirm(&mut self) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn notebooks_panel_run_all(&mut self) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn notebooks_panel_focus_next(&mut self) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn notebooks_panel_focus_prev(&mut self) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn notebooks_panel_rerun_selected(&mut self) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn notebooks_panel_add_command_cell(&mut self) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn notebooks_panel_add_markdown_cell(&mut self) {}
 
     // Settings panel controls
@@ -573,21 +573,21 @@ pub trait ActionContext<T: EventListener> {
     fn process_workflows_search_perform(&mut self, _query: String, _window_id: winit::window::WindowId) {}
 
     // Plugins panel controls (feature = "plugins"). Default to no-op/false when disabled.
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn open_plugins_panel(&mut self) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn plugins_panel_cancel(&mut self) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn plugins_panel_active(&self) -> bool {
         false
     }
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn plugins_panel_input(&mut self, _c: char) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn plugins_panel_backspace(&mut self) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn plugins_panel_move_selection(&mut self, _delta: isize) {}
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     fn plugins_panel_confirm(&mut self) {}
 
     // Workflows progress overlay controls
@@ -1968,7 +1968,7 @@ crate::display::modern_ui::WarpTabStyle::from_theme(cfg)
                         return true;
                     }
                     "[Blocks]" => {
-                        #[cfg(feature = "never")]
+                        #[cfg(feature = "notebooks")]
                         {
                             self.ctx.open_blocks_search_panel();
                         }
@@ -1977,7 +1977,7 @@ crate::display::modern_ui::WarpTabStyle::from_theme(cfg)
                         return true;
                     }
                     "[Plugins]" => {
-                        #[cfg(feature = "never")]
+                        #[cfg(feature = "notebooks")]
                         {
                             self.ctx.open_plugins_panel();
                         }
@@ -4089,7 +4089,7 @@ mod tests {
         mods: ModifiersState::empty(),
     }
 
-    #[cfg(feature = "never")]
+    #[cfg(feature = "notebooks")]
     #[test]
     fn blocks_search_binding_toggle_via_action() {
         // Build EventLoop for scheduler proxy
