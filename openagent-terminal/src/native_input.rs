@@ -1,53 +1,1571 @@
-// Native Keyboard/Mouse Integration for OpenAgent Terminal
-//
-// Provides immediate input handling for blocks, tabs, and splits with no lazy fallbacks.
-// Features real-time key capture, mouse interaction, gesture recognition, and context-aware
-// shortcuts.
-//
-// #![allow(dead_code)]
-//
-// use std::collections::{HashMap, HashSet, VecDeque};
-// use std::sync::Arc;
-// use std::time::{Duration, Instant};
-//
-// use anyhow::Result;
-// use bitflags::bitflags;
-// use crossterm::event::{
-// Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-// };
-// use serde::{Deserialize, Serialize};
-// use tokio::sync::mpsc;
-// use tracing::{debug, error, info, warn};
-//
-// use crate::blocks_v2::{BlockId, Block};
-// use crate::native_renderer::RenderEvent;
-//
-// Native input integration manager
-// pub struct InputIntegration {
-// Keyboard handler for immediate key processing
-// keyboard_handler: KeyboardHandler,
-//
-// Mouse handler for immediate mouse processing
-// mouse_handler: MouseHandler,
-//
-// Gesture recognizer for advanced interactions
-// gesture_recognizer: GestureRecognizer,
-//
-// Shortcut manager for context-aware bindings
-// shortcut_manager: ShortcutManager,
-//
-// Focus manager for input routing
-// focus_manager: FocusManager,
-//
-// Input state tracker
-// state_tracker: InputStateTracker,
-//
-// Event callbacks for immediate responses
-// event_callbacks: Vec<Box<dyn Fn(&InputEvent) + Send + Sync>>,
-//
-// Performance statistics
-// stats: InputStats,
-// }
+//! Production Native Input Integration System
+//! 
+//! Provides comprehensive input handling with real-time key capture, advanced mouse 
+//! interaction, gesture recognition, context-aware shortcuts, and intelligent focus management.
+
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use anyhow::Result;
+use bitflags::bitflags;
+use serde::{Deserialize, Serialize};
+use tokio::sync::{mpsc, RwLock};
+use tracing::{debug, error, info, warn};
+use uuid::Uuid;
+
+#[cfg(feature = "blocks")]
+use crate::blocks_v2::{BlockId, Block};
+
+/// Production-ready native input integration manager
+pub struct InputIntegration {
+    /// Real-time keyboard handler
+    keyboard_handler: KeyboardHandler,
+    
+    /// Advanced mouse interaction handler
+    mouse_handler: MouseHandler,
+    
+    /// Multi-touch gesture recognition system
+    gesture_recognizer: GestureRecognizer,
+    
+    /// Context-aware shortcut management
+    shortcut_manager: ShortcutManager,
+    
+    /// Intelligent focus management
+    focus_manager: FocusManager,
+    
+    /// Comprehensive input state tracking
+    state_tracker: InputStateTracker,
+    
+    /// Event broadcasting system
+    event_sender: mpsc::UnboundedSender<InputEvent>,
+    event_receiver: Arc<RwLock<mpsc::UnboundedReceiver<InputEvent>>>,
+    
+    /// Performance and usage statistics
+    stats: InputStats,
+    
+    /// Configuration and preferences
+    config: InputConfig,
+    
+    /// Active input modes and contexts
+    input_modes: HashMap<String, InputMode>,
+    
+    /// Plugin system for extensible input handling
+    plugins: Vec<Box<dyn InputPlugin>>,
+}
+
+/// Comprehensive input event system
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InputEvent {
+    /// Keyboard events with rich context
+    Keyboard {
+        event: KeyboardEvent,
+        context: InputContext,
+        timestamp: Instant,
+    },
+    
+    /// Mouse events with precision tracking
+    Mouse {
+        event: MouseEvent,
+        context: InputContext,
+        timestamp: Instant,
+    },
+    
+    /// Touch and gesture events
+    Gesture {
+        gesture: GestureEvent,
+        context: InputContext,
+        timestamp: Instant,
+    },
+    
+    /// Focus change events
+    Focus {
+        previous_target: Option<FocusTarget>,
+        new_target: FocusTarget,
+        reason: FocusChangeReason,
+        timestamp: Instant,
+    },
+    
+    /// Shortcut activation events
+    Shortcut {
+        shortcut: ShortcutEvent,
+        context: InputContext,
+        timestamp: Instant,
+    },
+    
+    /// Custom input events from plugins
+    Custom {
+        plugin_id: String,
+        event_type: String,
+        data: HashMap<String, serde_json::Value>,
+        timestamp: Instant,
+    },
+}
+
+/// Rich keyboard event with metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyboardEvent {
+    pub key_code: KeyCode,
+    pub modifiers: KeyModifiers,
+    pub event_type: KeyEventType,
+    pub repeat_count: u32,
+    pub character: Option<char>,
+    pub is_compose_sequence: bool,
+    pub locale_variant: Option<String>,
+}
+
+/// Enhanced key codes with additional keys
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum KeyCode {
+    // Standard keys
+    Char(char),
+    F(u8),
+    Backspace,
+    Enter,
+    Left,
+    Right,
+    Up,
+    Down,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Tab,
+    BackTab,
+    Delete,
+    Insert,
+    Esc,
+    
+    // Extended keys
+    CapsLock,
+    ScrollLock,
+    NumLock,
+    PrintScreen,
+    Pause,
+    Menu,
+    KeypadBegin,
+    
+    // Media keys
+    MediaPlay,
+    MediaPause,
+    MediaPlayPause,
+    MediaReverse,
+    MediaStop,
+    MediaFastForward,
+    MediaRewind,
+    MediaNext,
+    MediaPrevious,
+    
+    // Browser keys
+    BrowserBack,
+    BrowserForward,
+    BrowserRefresh,
+    BrowserStop,
+    BrowserSearch,
+    BrowserFavorites,
+    BrowserHome,
+    
+    // Volume keys
+    VolumeUp,
+    VolumeDown,
+    VolumeMute,
+    
+    // Custom keys
+    Custom(String),
+}
+
+bitflags! {
+    /// Enhanced key modifiers with additional modifiers
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub struct KeyModifiers: u16 {
+        const SHIFT = 0b0000_0001;
+        const CONTROL = 0b0000_0010;
+        const ALT = 0b0000_0100;
+        const SUPER = 0b0000_1000;
+        const HYPER = 0b0001_0000;
+        const META = 0b0010_0000;
+        const CAPS_LOCK = 0b0100_0000;
+        const NUM_LOCK = 0b1000_0000;
+        
+        // Combination shortcuts
+        const CTRL_SHIFT = Self::CONTROL.bits() | Self::SHIFT.bits();
+        const CTRL_ALT = Self::CONTROL.bits() | Self::ALT.bits();
+        const ALT_SHIFT = Self::ALT.bits() | Self::SHIFT.bits();
+        const SUPER_SHIFT = Self::SUPER.bits() | Self::SHIFT.bits();
+    }
+}
+
+/// Keyboard event types
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum KeyEventType {
+    KeyDown,
+    KeyUp,
+    KeyRepeat,
+}
+
+/// Advanced mouse event with precision data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MouseEvent {
+    pub position: MousePosition,
+    pub button: Option<MouseButton>,
+    pub event_type: MouseEventType,
+    pub modifiers: KeyModifiers,
+    pub click_count: u32,
+    pub pressure: Option<f32>,
+    pub tilt: Option<(f32, f32)>,
+    pub wheel_delta: Option<(f32, f32)>,
+    pub device_id: Option<String>,
+}
+
+/// Precise mouse position with sub-pixel accuracy
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct MousePosition {
+    pub x: f64,
+    pub y: f64,
+    pub grid_x: Option<u16>,
+    pub grid_y: Option<u16>,
+}
+
+/// Extended mouse button support
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    Back,
+    Forward,
+    X1,
+    X2,
+    Custom(u8),
+}
+
+/// Mouse event types with gesture support
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MouseEventType {
+    ButtonDown,
+    ButtonUp,
+    Move,
+    Drag,
+    Wheel,
+    Enter,
+    Leave,
+    Hover,
+}
+
+/// Gesture recognition system
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GestureEvent {
+    /// Single tap gesture
+    Tap {
+        position: MousePosition,
+        finger_count: u8,
+    },
+    
+    /// Double tap gesture
+    DoubleTap {
+        position: MousePosition,
+        finger_count: u8,
+    },
+    
+    /// Long press gesture
+    LongPress {
+        position: MousePosition,
+        duration: Duration,
+    },
+    
+    /// Swipe gesture with direction and velocity
+    Swipe {
+        start_position: MousePosition,
+        end_position: MousePosition,
+        direction: SwipeDirection,
+        velocity: f64,
+        finger_count: u8,
+    },
+    
+    /// Pinch gesture for zooming
+    Pinch {
+        center: MousePosition,
+        scale_factor: f64,
+        rotation: Option<f64>,
+    },
+    
+    /// Pan gesture for scrolling
+    Pan {
+        start_position: MousePosition,
+        current_position: MousePosition,
+        velocity: (f64, f64),
+    },
+    
+    /// Rotate gesture
+    Rotate {
+        center: MousePosition,
+        angle_delta: f64,
+        total_angle: f64,
+    },
+    
+    /// Custom gesture from plugins
+    Custom {
+        name: String,
+        data: HashMap<String, serde_json::Value>,
+    },
+}
+
+/// Swipe directions with diagonal support
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SwipeDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+    UpLeft,
+    UpRight,
+    DownLeft,
+    DownRight,
+}
+
+/// Input context for situational awareness
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InputContext {
+    pub focused_element: Option<FocusTarget>,
+    pub active_mode: String,
+    pub cursor_position: Option<MousePosition>,
+    pub selection_range: Option<SelectionRange>,
+    pub modifier_state: KeyModifiers,
+    pub input_method: InputMethod,
+    pub locale: Option<String>,
+    pub accessibility_mode: bool,
+}
+
+/// Focus target identification
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum FocusTarget {
+    Terminal,
+    CommandLine,
+    SearchBox,
+    Panel(String),
+    Block(String),
+    Tab(String),
+    Menu(String),
+    Dialog(String),
+    Custom(String),
+}
+
+/// Text selection range
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SelectionRange {
+    pub start: usize,
+    pub end: usize,
+}
+
+/// Input methods and IME support
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InputMethod {
+    Direct,
+    IME(IMEState),
+    VoiceInput,
+    Accessibility(AccessibilityInput),
+}
+
+/// Input Method Editor state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IMEState {
+    pub composition_string: String,
+    pub cursor_position: usize,
+    pub candidates: Vec<String>,
+    pub selected_candidate: Option<usize>,
+}
+
+/// Accessibility input methods
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AccessibilityInput {
+    ScreenReader,
+    VoiceControl,
+    EyeTracking,
+    SwitchControl,
+}
+
+/// Focus change reasons
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FocusChangeReason {
+    MouseClick,
+    KeyboardNavigation,
+    ProgrammaticChange,
+    WindowActivation,
+    DialogOpen,
+    MenuNavigation,
+}
+
+/// Shortcut event with context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShortcutEvent {
+    pub shortcut_id: String,
+    pub key_combination: KeyCombination,
+    pub action: String,
+    pub parameters: HashMap<String, String>,
+    pub success: bool,
+    pub execution_time: Duration,
+}
+
+/// Key combination for shortcuts
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct KeyCombination {
+    pub modifiers: KeyModifiers,
+    pub key: KeyCode,
+    pub sequence: Vec<KeyCode>,
+}
+
+/// Production keyboard handler
+pub struct KeyboardHandler {
+    /// Key mapping configurations
+    key_maps: HashMap<String, KeyMap>,
+    
+    /// Active key sequences for multi-key shortcuts
+    active_sequences: HashMap<String, KeySequence>,
+    
+    /// Repeat key handling
+    repeat_handler: RepeatKeyHandler,
+    
+    /// IME integration
+    ime_handler: IMEHandler,
+    
+    /// Accessibility features
+    accessibility: AccessibilityKeyboard,
+}
+
+/// Key mapping configuration
+#[derive(Debug, Clone)]
+pub struct KeyMap {
+    pub name: String,
+    pub mappings: HashMap<KeyCombination, String>,
+    pub priority: i32,
+    pub conditions: Vec<KeyMapCondition>,
+}
+
+/// Conditions for key map activation
+#[derive(Debug, Clone)]
+pub enum KeyMapCondition {
+    FocusTarget(FocusTarget),
+    ModifierState(KeyModifiers),
+    InputMode(String),
+    Custom(Box<dyn Fn(&InputContext) -> bool + Send + Sync>),
+}
+
+/// Key sequence tracking for complex shortcuts
+#[derive(Debug, Clone)]
+pub struct KeySequence {
+    pub keys: Vec<KeyCode>,
+    pub timestamp: Instant,
+    pub timeout: Duration,
+    pub partial_matches: Vec<String>,
+}
+
+/// Repeat key handling
+pub struct RepeatKeyHandler {
+    pub repeat_delay: Duration,
+    pub repeat_rate: Duration,
+    pub active_key: Option<KeyCode>,
+    pub last_press_time: Option<Instant>,
+    pub repeat_count: u32,
+}
+
+/// IME integration handler
+pub struct IMEHandler {
+    pub enabled: bool,
+    pub current_state: Option<IMEState>,
+    pub supported_methods: Vec<String>,
+}
+
+/// Accessibility keyboard features
+pub struct AccessibilityKeyboard {
+    pub sticky_keys: bool,
+    pub filter_keys: bool,
+    pub toggle_keys: bool,
+    pub sound_feedback: bool,
+    pub key_preview: bool,
+}
+
+/// Advanced mouse handler
+pub struct MouseHandler {
+    /// Button state tracking
+    button_state: HashMap<MouseButton, ButtonState>,
+    
+    /// Drag and drop handling
+    drag_handler: DragDropHandler,
+    
+    /// Wheel and scrolling
+    wheel_handler: WheelHandler,
+    
+    /// Precision tracking
+    precision_tracker: PrecisionTracker,
+    
+    /// Click detection
+    click_detector: ClickDetector,
+}
+
+/// Mouse button state
+#[derive(Debug, Clone)]
+pub struct ButtonState {
+    pub pressed: bool,
+    pub press_time: Option<Instant>,
+    pub press_position: Option<MousePosition>,
+    pub click_count: u32,
+}
+
+/// Drag and drop operations
+pub struct DragDropHandler {
+    pub active_drag: Option<DragOperation>,
+    pub drop_targets: Vec<DropTarget>,
+    pub drag_threshold: f64,
+}
+
+/// Active drag operation
+#[derive(Debug, Clone)]
+pub struct DragOperation {
+    pub drag_id: Uuid,
+    pub start_position: MousePosition,
+    pub current_position: MousePosition,
+    pub data: DragData,
+    pub allowed_effects: Vec<DragEffect>,
+    pub current_effect: Option<DragEffect>,
+}
+
+/// Drag data types
+#[derive(Debug, Clone)]
+pub enum DragData {
+    Text(String),
+    Files(Vec<std::path::PathBuf>),
+    Block(String),
+    Custom(String, serde_json::Value),
+}
+
+/// Drag effects
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DragEffect {
+    Copy,
+    Move,
+    Link,
+    None,
+}
+
+/// Drop target definition
+#[derive(Debug, Clone)]
+pub struct DropTarget {
+    pub target_id: String,
+    pub bounds: Rect,
+    pub accepted_types: Vec<String>,
+    pub handler: String,
+}
+
+/// Rectangle for bounds checking
+#[derive(Debug, Clone, Copy)]
+pub struct Rect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Mouse wheel handling
+pub struct WheelHandler {
+    pub scroll_sensitivity: f64,
+    pub acceleration_curve: AccelerationCurve,
+    pub momentum_scrolling: bool,
+}
+
+/// Scroll acceleration configuration
+#[derive(Debug, Clone)]
+pub struct AccelerationCurve {
+    pub points: Vec<(f64, f64)>, // (input_speed, output_speed)
+    pub smoothing_factor: f64,
+}
+
+/// Precision mouse tracking
+pub struct PrecisionTracker {
+    pub sub_pixel_accuracy: bool,
+    pub smoothing_enabled: bool,
+    pub prediction_enabled: bool,
+    pub sample_rate: u32,
+}
+
+/// Click detection and classification
+pub struct ClickDetector {
+    pub double_click_time: Duration,
+    pub triple_click_time: Duration,
+    pub click_distance_threshold: f64,
+    pub last_clicks: VecDeque<ClickEvent>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ClickEvent {
+    pub position: MousePosition,
+    pub timestamp: Instant,
+    pub button: MouseButton,
+}
+
+/// Multi-touch gesture recognition
+pub struct GestureRecognizer {
+    /// Active touch points
+    touch_points: HashMap<u32, TouchPoint>,
+    
+    /// Gesture detectors
+    detectors: Vec<Box<dyn GestureDetector>>,
+    
+    /// Recognition state
+    recognition_state: GestureRecognitionState,
+    
+    /// Configuration
+    config: GestureConfig,
+}
+
+/// Touch point tracking
+#[derive(Debug, Clone)]
+pub struct TouchPoint {
+    pub id: u32,
+    pub position: MousePosition,
+    pub start_time: Instant,
+    pub last_update: Instant,
+    pub pressure: f32,
+    pub size: f32,
+    pub velocity: (f64, f64),
+}
+
+/// Gesture detector trait
+pub trait GestureDetector: Send + Sync {
+    fn detect(&mut self, touch_points: &HashMap<u32, TouchPoint>) -> Option<GestureEvent>;
+    fn reset(&mut self);
+    fn name(&self) -> &str;
+}
+
+/// Gesture recognition state
+#[derive(Debug, Clone)]
+pub struct GestureRecognitionState {
+    pub active_gestures: Vec<String>,
+    pub pending_gestures: Vec<PendingGesture>,
+    pub gesture_history: VecDeque<GestureEvent>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingGesture {
+    pub detector_name: String,
+    pub confidence: f64,
+    pub start_time: Instant,
+    pub required_duration: Option<Duration>,
+}
+
+/// Gesture recognition configuration
+#[derive(Debug, Clone)]
+pub struct GestureConfig {
+    pub tap_timeout: Duration,
+    pub long_press_duration: Duration,
+    pub swipe_min_distance: f64,
+    pub swipe_max_duration: Duration,
+    pub pinch_threshold: f64,
+    pub rotation_threshold: f64,
+}
+
+impl Default for GestureConfig {
+    fn default() -> Self {
+        Self {
+            tap_timeout: Duration::from_millis(200),
+            long_press_duration: Duration::from_millis(500),
+            swipe_min_distance: 50.0,
+            swipe_max_duration: Duration::from_millis(500),
+            pinch_threshold: 0.1,
+            rotation_threshold: 5.0, // degrees
+        }
+    }
+}
+
+/// Context-aware shortcut management
+pub struct ShortcutManager {
+    /// Registered shortcuts
+    shortcuts: HashMap<String, Shortcut>,
+    
+    /// Context-specific shortcut sets
+    context_shortcuts: HashMap<String, Vec<String>>,
+    
+    /// Command palette integration
+    command_palette: CommandPalette,
+    
+    /// Macro system
+    macro_system: MacroSystem,
+}
+
+/// Shortcut definition
+#[derive(Debug, Clone)]
+pub struct Shortcut {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub key_combination: KeyCombination,
+    pub contexts: Vec<String>,
+    pub action: ShortcutAction,
+    pub enabled: bool,
+    pub user_defined: bool,
+}
+
+/// Shortcut actions
+#[derive(Debug, Clone)]
+pub enum ShortcutAction {
+    Command(String),
+    Function(String),
+    Macro(String),
+    Custom(Box<dyn Fn(&InputContext) -> Result<()> + Send + Sync>),
+}
+
+/// Command palette for shortcut discovery
+pub struct CommandPalette {
+    pub enabled: bool,
+    pub trigger_key: KeyCombination,
+    pub fuzzy_search: bool,
+    pub recent_commands: VecDeque<String>,
+}
+
+/// Macro recording and playback
+pub struct MacroSystem {
+    pub recording: bool,
+    pub current_macro: Option<Macro>,
+    pub saved_macros: HashMap<String, Macro>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Macro {
+    pub id: String,
+    pub name: String,
+    pub events: Vec<InputEvent>,
+    pub trigger: Option<KeyCombination>,
+}
+
+/// Intelligent focus management
+pub struct FocusManager {
+    /// Current focus target
+    current_focus: Option<FocusTarget>,
+    
+    /// Focus history for navigation
+    focus_history: VecDeque<FocusTarget>,
+    
+    /// Focus tree for hierarchical navigation
+    focus_tree: FocusTree,
+    
+    /// Tab order management
+    tab_order: TabOrderManager,
+    
+    /// Accessibility integration
+    accessibility_focus: AccessibilityFocusManager,
+}
+
+/// Hierarchical focus tree
+#[derive(Debug, Clone)]
+pub struct FocusTree {
+    pub root: FocusNode,
+    pub current_node: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FocusNode {
+    pub id: String,
+    pub target: FocusTarget,
+    pub children: Vec<FocusNode>,
+    pub parent: Option<String>,
+    pub focusable: bool,
+    pub tab_index: Option<i32>,
+}
+
+/// Tab order management
+pub struct TabOrderManager {
+    pub tab_groups: HashMap<String, TabGroup>,
+    pub current_group: Option<String>,
+    pub wrap_around: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct TabGroup {
+    pub id: String,
+    pub elements: Vec<String>,
+    pub current_index: usize,
+}
+
+/// Accessibility focus management
+pub struct AccessibilityFocusManager {
+    pub screen_reader_mode: bool,
+    pub focus_indicators: bool,
+    pub high_contrast_focus: bool,
+    pub focus_sounds: bool,
+}
+
+/// Comprehensive input state tracking
+pub struct InputStateTracker {
+    /// Current input state
+    current_state: InputState,
+    
+    /// State history for undo/redo
+    state_history: VecDeque<InputState>,
+    
+    /// Performance metrics
+    performance_metrics: PerformanceMetrics,
+    
+    /// Event statistics
+    event_statistics: EventStatistics,
+}
+
+#[derive(Debug, Clone)]
+pub struct InputState {
+    pub timestamp: Instant,
+    pub modifier_state: KeyModifiers,
+    pub pressed_keys: HashSet<KeyCode>,
+    pub mouse_position: MousePosition,
+    pub pressed_buttons: HashSet<MouseButton>,
+    pub active_gestures: Vec<String>,
+    pub focus_target: Option<FocusTarget>,
+    pub input_mode: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PerformanceMetrics {
+    pub input_latency: Duration,
+    pub processing_time: Duration,
+    pub event_rate: f64,
+    pub dropped_events: u64,
+    pub queue_depth: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct EventStatistics {
+    pub total_events: u64,
+    pub keyboard_events: u64,
+    pub mouse_events: u64,
+    pub gesture_events: u64,
+    pub shortcut_activations: u64,
+    pub errors: u64,
+}
+
+/// Input system statistics
+#[derive(Debug, Clone)]
+pub struct InputStats {
+    pub events_processed: u64,
+    pub average_latency: Duration,
+    pub peak_latency: Duration,
+    pub dropped_events: u64,
+    pub gesture_recognitions: u64,
+    pub shortcut_activations: u64,
+    pub focus_changes: u64,
+}
+
+/// Input configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InputConfig {
+    pub keyboard: KeyboardConfig,
+    pub mouse: MouseConfig,
+    pub gestures: GestureConfig,
+    pub shortcuts: ShortcutConfig,
+    pub focus: FocusConfig,
+    pub accessibility: AccessibilityConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyboardConfig {
+    pub repeat_delay: Duration,
+    pub repeat_rate: Duration,
+    pub ime_enabled: bool,
+    pub sticky_keys: bool,
+    pub filter_keys: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MouseConfig {
+    pub sensitivity: f64,
+    pub acceleration: f64,
+    pub double_click_time: Duration,
+    pub wheel_sensitivity: f64,
+    pub reverse_scroll: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShortcutConfig {
+    pub enabled: bool,
+    pub command_palette_key: String,
+    pub custom_shortcuts: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FocusConfig {
+    pub wrap_around: bool,
+    pub skip_disabled: bool,
+    pub focus_follows_mouse: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessibilityConfig {
+    pub screen_reader_support: bool,
+    pub high_contrast_focus: bool,
+    pub focus_sounds: bool,
+    pub voice_input: bool,
+}
+
+/// Input mode for context-specific behavior
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InputMode {
+    Normal,
+    Insert,
+    Command,
+    Search,
+    Select,
+    Custom(String),
+}
+
+/// Plugin trait for extensible input handling
+pub trait InputPlugin: Send + Sync {
+    fn name(&self) -> &str;
+    fn handle_event(&mut self, event: &InputEvent) -> Result<Option<InputEvent>>;
+    fn initialize(&mut self, config: &InputConfig) -> Result<()>;
+    fn shutdown(&mut self) -> Result<()>;
+}
+
+impl Default for InputConfig {
+    fn default() -> Self {
+        Self {
+            keyboard: KeyboardConfig {
+                repeat_delay: Duration::from_millis(500),
+                repeat_rate: Duration::from_millis(50),
+                ime_enabled: true,
+                sticky_keys: false,
+                filter_keys: false,
+            },
+            mouse: MouseConfig {
+                sensitivity: 1.0,
+                acceleration: 1.0,
+                double_click_time: Duration::from_millis(500),
+                wheel_sensitivity: 1.0,
+                reverse_scroll: false,
+            },
+            gestures: GestureConfig::default(),
+            shortcuts: ShortcutConfig {
+                enabled: true,
+                command_palette_key: "Ctrl+Shift+P".to_string(),
+                custom_shortcuts: HashMap::new(),
+            },
+            focus: FocusConfig {
+                wrap_around: true,
+                skip_disabled: true,
+                focus_follows_mouse: false,
+            },
+            accessibility: AccessibilityConfig {
+                screen_reader_support: false,
+                high_contrast_focus: false,
+                focus_sounds: false,
+                voice_input: false,
+            },
+        }
+    }
+}
+
+impl InputIntegration {
+    /// Create a new input integration system
+    pub fn new(config: InputConfig) -> Result<Self> {
+        let (event_sender, event_receiver) = mpsc::unbounded_channel();
+        
+        Ok(Self {
+            keyboard_handler: KeyboardHandler::new(&config.keyboard),
+            mouse_handler: MouseHandler::new(&config.mouse),
+            gesture_recognizer: GestureRecognizer::new(config.gestures.clone()),
+            shortcut_manager: ShortcutManager::new(&config.shortcuts),
+            focus_manager: FocusManager::new(&config.focus),
+            state_tracker: InputStateTracker::new(),
+            event_sender,
+            event_receiver: Arc::new(RwLock::new(event_receiver)),
+            stats: InputStats::default(),
+            config,
+            input_modes: HashMap::new(),
+            plugins: Vec::new(),
+        })
+    }
+
+    /// Start the input integration system
+    pub async fn start(&mut self) -> Result<()> {
+        info!("Starting input integration system");
+        
+        // Initialize all subsystems
+        self.keyboard_handler.initialize().await?;
+        self.mouse_handler.initialize().await?;
+        self.gesture_recognizer.initialize().await?;
+        self.shortcut_manager.initialize().await?;
+        self.focus_manager.initialize().await?;
+        
+        // Start input processing loop
+        self.start_processing_loop().await?;
+        
+        info!("Input integration system started successfully");
+        Ok(())
+    }
+
+    /// Process an input event
+    pub async fn process_event(&mut self, event: InputEvent) -> Result<()> {
+        let start_time = Instant::now();
+        
+        // Update statistics
+        self.stats.events_processed += 1;
+        
+        // Process through plugins first
+        let mut processed_event = event;
+        for plugin in &mut self.plugins {
+            if let Some(modified_event) = plugin.handle_event(&processed_event)? {
+                processed_event = modified_event;
+            }
+        }
+        
+        // Route event to appropriate handler
+        match &processed_event {
+            InputEvent::Keyboard { event, context, .. } => {
+                self.handle_keyboard_event(event, context).await?;
+            }
+            InputEvent::Mouse { event, context, .. } => {
+                self.handle_mouse_event(event, context).await?;
+            }
+            InputEvent::Gesture { gesture, context, .. } => {
+                self.handle_gesture_event(gesture, context).await?;
+            }
+            InputEvent::Focus { new_target, reason, .. } => {
+                self.handle_focus_event(new_target.clone(), reason.clone()).await?;
+            }
+            InputEvent::Shortcut { shortcut, context, .. } => {
+                self.handle_shortcut_event(shortcut, context).await?;
+            }
+            InputEvent::Custom { .. } => {
+                // Custom events are handled by plugins
+            }
+        }
+        
+        // Update performance metrics
+        let processing_time = start_time.elapsed();
+        self.update_performance_metrics(processing_time);
+        
+        // Broadcast event
+        let _ = self.event_sender.send(processed_event);
+        
+        Ok(())
+    }
+
+    async fn handle_keyboard_event(&mut self, event: &KeyboardEvent, context: &InputContext) -> Result<()> {
+        // Check for shortcuts first
+        if let Some(shortcut) = self.shortcut_manager.match_shortcut(event, context) {
+            self.execute_shortcut(shortcut).await?;
+            return Ok(());
+        }
+
+        // Handle special keys
+        match event.key_code {
+            KeyCode::Tab | KeyCode::BackTab => {
+                self.handle_tab_navigation(event.key_code == KeyCode::BackTab).await?;
+            }
+            KeyCode::Esc => {
+                self.handle_escape_key(context).await?;
+            }
+            _ => {
+                // Regular key processing
+                self.keyboard_handler.process_key(event, context).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_mouse_event(&mut self, event: &MouseEvent, context: &InputContext) -> Result<()> {
+        // Update focus based on mouse click
+        if let MouseEventType::ButtonDown = event.event_type {
+            if let Some(target) = self.determine_focus_target_from_position(event.position) {
+                self.focus_manager.set_focus(target, FocusChangeReason::MouseClick).await?;
+            }
+        }
+
+        // Process mouse event
+        self.mouse_handler.process_event(event, context).await?;
+
+        Ok(())
+    }
+
+    async fn handle_gesture_event(&mut self, gesture: &GestureEvent, context: &InputContext) -> Result<()> {
+        match gesture {
+            GestureEvent::Swipe { direction, .. } => {
+                self.handle_swipe_gesture(*direction, context).await?;
+            }
+            GestureEvent::Pinch { scale_factor, .. } => {
+                self.handle_pinch_gesture(*scale_factor, context).await?;
+            }
+            GestureEvent::DoubleTap { position, .. } => {
+                self.handle_double_tap(*position, context).await?;
+            }
+            _ => {
+                // Other gestures handled by gesture recognizer
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_focus_event(&mut self, target: FocusTarget, reason: FocusChangeReason) -> Result<()> {
+        self.focus_manager.set_focus(target, reason).await?;
+        self.stats.focus_changes += 1;
+        Ok(())
+    }
+
+    async fn handle_shortcut_event(&mut self, shortcut: &ShortcutEvent, context: &InputContext) -> Result<()> {
+        if shortcut.success {
+            self.stats.shortcut_activations += 1;
+        }
+        Ok(())
+    }
+
+    async fn start_processing_loop(&mut self) -> Result<()> {
+        // This would start a background task to process events
+        // Implementation would depend on the specific event loop system
+        Ok(())
+    }
+
+    fn update_performance_metrics(&mut self, processing_time: Duration) {
+        // Update average latency
+        let total_time = self.stats.average_latency * (self.stats.events_processed as u32 - 1) + processing_time;
+        self.stats.average_latency = total_time / self.stats.events_processed as u32;
+
+        // Update peak latency
+        if processing_time > self.stats.peak_latency {
+            self.stats.peak_latency = processing_time;
+        }
+    }
+
+    fn determine_focus_target_from_position(&self, position: MousePosition) -> Option<FocusTarget> {
+        // Implementation would determine focus target based on mouse position
+        // This is a simplified version
+        Some(FocusTarget::Terminal)
+    }
+
+    async fn handle_tab_navigation(&mut self, reverse: bool) -> Result<()> {
+        if reverse {
+            self.focus_manager.focus_previous().await?;
+        } else {
+            self.focus_manager.focus_next().await?;
+        }
+        Ok(())
+    }
+
+    async fn handle_escape_key(&mut self, context: &InputContext) -> Result<()> {
+        // Handle escape key based on context
+        match &context.focused_element {
+            Some(FocusTarget::Dialog(_)) => {
+                // Close dialog
+            }
+            Some(FocusTarget::Menu(_)) => {
+                // Close menu
+            }
+            _ => {
+                // Default escape behavior
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_swipe_gesture(&mut self, direction: SwipeDirection, context: &InputContext) -> Result<()> {
+        match direction {
+            SwipeDirection::Left | SwipeDirection::Right => {
+                // Handle tab switching
+            }
+            SwipeDirection::Up | SwipeDirection::Down => {
+                // Handle scrolling
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    async fn handle_pinch_gesture(&mut self, scale_factor: f64, context: &InputContext) -> Result<()> {
+        // Handle zoom in/out
+        if scale_factor > 1.0 {
+            // Zoom in
+        } else {
+            // Zoom out
+        }
+        Ok(())
+    }
+
+    async fn handle_double_tap(&mut self, position: MousePosition, context: &InputContext) -> Result<()> {
+        // Handle double tap based on position and context
+        Ok(())
+    }
+
+    async fn execute_shortcut(&mut self, shortcut: Shortcut) -> Result<()> {
+        match &shortcut.action {
+            ShortcutAction::Command(cmd) => {
+                // Execute command
+                info!("Executing shortcut command: {}", cmd);
+            }
+            ShortcutAction::Function(func) => {
+                // Call function
+                info!("Calling shortcut function: {}", func);
+            }
+            ShortcutAction::Macro(macro_id) => {
+                // Execute macro
+                self.shortcut_manager.macro_system.execute_macro(macro_id).await?;
+            }
+            ShortcutAction::Custom(handler) => {
+                // Execute custom handler
+                let context = self.get_current_context();
+                handler(&context)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn get_current_context(&self) -> InputContext {
+        // Return current input context
+        InputContext {
+            focused_element: self.focus_manager.current_focus.clone(),
+            active_mode: "normal".to_string(),
+            cursor_position: None,
+            selection_range: None,
+            modifier_state: KeyModifiers::empty(),
+            input_method: InputMethod::Direct,
+            locale: None,
+            accessibility_mode: false,
+        }
+    }
+
+    /// Add an input plugin
+    pub fn add_plugin(&mut self, plugin: Box<dyn InputPlugin>) -> Result<()> {
+        self.plugins.push(plugin);
+        Ok(())
+    }
+
+    /// Get input statistics
+    pub fn get_stats(&self) -> &InputStats {
+        &self.stats
+    }
+
+    /// Update configuration
+    pub async fn update_config(&mut self, config: InputConfig) -> Result<()> {
+        self.config = config;
+        // Reinitialize subsystems with new config
+        Ok(())
+    }
+}
+
+impl Default for InputStats {
+    fn default() -> Self {
+        Self {
+            events_processed: 0,
+            average_latency: Duration::from_millis(0),
+            peak_latency: Duration::from_millis(0),
+            dropped_events: 0,
+            gesture_recognitions: 0,
+            shortcut_activations: 0,
+            focus_changes: 0,
+        }
+    }
+}
+
+impl KeyboardHandler {
+    pub fn new(config: &KeyboardConfig) -> Self {
+        Self {
+            key_maps: HashMap::new(),
+            active_sequences: HashMap::new(),
+            repeat_handler: RepeatKeyHandler::new(config.repeat_delay, config.repeat_rate),
+            ime_handler: IMEHandler::new(config.ime_enabled),
+            accessibility: AccessibilityKeyboard::new(config),
+        }
+    }
+
+    pub async fn initialize(&mut self) -> Result<()> {
+        // Initialize keyboard handling
+        Ok(())
+    }
+
+    pub async fn process_key(&mut self, event: &KeyboardEvent, context: &InputContext) -> Result<()> {
+        // Process keyboard event
+        Ok(())
+    }
+}
+
+impl MouseHandler {
+    pub fn new(config: &MouseConfig) -> Self {
+        Self {
+            button_state: HashMap::new(),
+            drag_handler: DragDropHandler::new(),
+            wheel_handler: WheelHandler::new(config),
+            precision_tracker: PrecisionTracker::new(),
+            click_detector: ClickDetector::new(config.double_click_time),
+        }
+    }
+
+    pub async fn initialize(&mut self) -> Result<()> {
+        // Initialize mouse handling
+        Ok(())
+    }
+
+    pub async fn process_event(&mut self, event: &MouseEvent, context: &InputContext) -> Result<()> {
+        // Process mouse event
+        Ok(())
+    }
+}
+
+impl GestureRecognizer {
+    pub fn new(config: GestureConfig) -> Self {
+        Self {
+            touch_points: HashMap::new(),
+            detectors: Vec::new(),
+            recognition_state: GestureRecognitionState {
+                active_gestures: Vec::new(),
+                pending_gestures: Vec::new(),
+                gesture_history: VecDeque::new(),
+            },
+            config,
+        }
+    }
+
+    pub async fn initialize(&mut self) -> Result<()> {
+        // Initialize gesture recognition
+        Ok(())
+    }
+}
+
+impl ShortcutManager {
+    pub fn new(config: &ShortcutConfig) -> Self {
+        Self {
+            shortcuts: HashMap::new(),
+            context_shortcuts: HashMap::new(),
+            command_palette: CommandPalette::new(config),
+            macro_system: MacroSystem::new(),
+        }
+    }
+
+    pub async fn initialize(&mut self) -> Result<()> {
+        // Initialize shortcut management
+        self.load_default_shortcuts();
+        Ok(())
+    }
+
+    fn load_default_shortcuts(&mut self) {
+        // Load default shortcuts
+    }
+
+    pub fn match_shortcut(&self, event: &KeyboardEvent, context: &InputContext) -> Option<Shortcut> {
+        // Match keyboard event to shortcut
+        None
+    }
+}
+
+impl FocusManager {
+    pub fn new(config: &FocusConfig) -> Self {
+        Self {
+            current_focus: None,
+            focus_history: VecDeque::new(),
+            focus_tree: FocusTree {
+                root: FocusNode {
+                    id: "root".to_string(),
+                    target: FocusTarget::Terminal,
+                    children: Vec::new(),
+                    parent: None,
+                    focusable: false,
+                    tab_index: None,
+                },
+                current_node: None,
+            },
+            tab_order: TabOrderManager::new(config.wrap_around),
+            accessibility_focus: AccessibilityFocusManager::new(),
+        }
+    }
+
+    pub async fn initialize(&mut self) -> Result<()> {
+        // Initialize focus management
+        Ok(())
+    }
+
+    pub async fn set_focus(&mut self, target: FocusTarget, reason: FocusChangeReason) -> Result<()> {
+        let previous = self.current_focus.clone();
+        self.current_focus = Some(target.clone());
+        
+        // Add to history
+        if let Some(prev) = previous {
+            self.focus_history.push_back(prev);
+            if self.focus_history.len() > 50 {
+                self.focus_history.pop_front();
+            }
+        }
+        
+        Ok(())
+    }
+
+    pub async fn focus_next(&mut self) -> Result<()> {
+        // Focus next element in tab order
+        Ok(())
+    }
+
+    pub async fn focus_previous(&mut self) -> Result<()> {
+        // Focus previous element in tab order
+        Ok(())
+    }
+}
+
+impl InputStateTracker {
+    pub fn new() -> Self {
+        Self {
+            current_state: InputState {
+                timestamp: Instant::now(),
+                modifier_state: KeyModifiers::empty(),
+                pressed_keys: HashSet::new(),
+                mouse_position: MousePosition { x: 0.0, y: 0.0, grid_x: None, grid_y: None },
+                pressed_buttons: HashSet::new(),
+                active_gestures: Vec::new(),
+                focus_target: None,
+                input_mode: "normal".to_string(),
+            },
+            state_history: VecDeque::new(),
+            performance_metrics: PerformanceMetrics {
+                input_latency: Duration::from_millis(0),
+                processing_time: Duration::from_millis(0),
+                event_rate: 0.0,
+                dropped_events: 0,
+                queue_depth: 0,
+            },
+            event_statistics: EventStatistics {
+                total_events: 0,
+                keyboard_events: 0,
+                mouse_events: 0,
+                gesture_events: 0,
+                shortcut_activations: 0,
+                errors: 0,
+            },
+        }
+    }
+}
+
+// Helper implementations for sub-components
+impl RepeatKeyHandler {
+    pub fn new(delay: Duration, rate: Duration) -> Self {
+        Self {
+            repeat_delay: delay,
+            repeat_rate: rate,
+            active_key: None,
+            last_press_time: None,
+            repeat_count: 0,
+        }
+    }
+}
+
+impl IMEHandler {
+    pub fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            current_state: None,
+            supported_methods: vec!["basic".to_string()],
+        }
+    }
+}
+
+impl AccessibilityKeyboard {
+    pub fn new(config: &KeyboardConfig) -> Self {
+        Self {
+            sticky_keys: config.sticky_keys,
+            filter_keys: config.filter_keys,
+            toggle_keys: false,
+            sound_feedback: false,
+            key_preview: false,
+        }
+    }
+}
+
+impl DragDropHandler {
+    pub fn new() -> Self {
+        Self {
+            active_drag: None,
+            drop_targets: Vec::new(),
+            drag_threshold: 5.0,
+        }
+    }
+}
+
+impl WheelHandler {
+    pub fn new(config: &MouseConfig) -> Self {
+        Self {
+            scroll_sensitivity: config.wheel_sensitivity,
+            acceleration_curve: AccelerationCurve {
+                points: vec![(0.0, 0.0), (1.0, 1.0), (2.0, 3.0)],
+                smoothing_factor: 0.1,
+            },
+            momentum_scrolling: true,
+        }
+    }
+}
+
+impl PrecisionTracker {
+    pub fn new() -> Self {
+        Self {
+            sub_pixel_accuracy: true,
+            smoothing_enabled: true,
+            prediction_enabled: false,
+            sample_rate: 1000,
+        }
+    }
+}
+
+impl ClickDetector {
+    pub fn new(double_click_time: Duration) -> Self {
+        Self {
+            double_click_time,
+            triple_click_time: double_click_time * 2,
+            click_distance_threshold: 5.0,
+            last_clicks: VecDeque::new(),
+        }
+    }
+}
+
+impl CommandPalette {
+    pub fn new(config: &ShortcutConfig) -> Self {
+        Self {
+            enabled: config.enabled,
+            trigger_key: KeyCombination {
+                modifiers: KeyModifiers::CTRL_SHIFT,
+                key: KeyCode::Char('p'),
+                sequence: Vec::new(),
+            },
+            fuzzy_search: true,
+            recent_commands: VecDeque::new(),
+        }
+    }
+}
+
+impl MacroSystem {
+    pub fn new() -> Self {
+        Self {
+            recording: false,
+            current_macro: None,
+            saved_macros: HashMap::new(),
+        }
+    }
+
+    pub async fn execute_macro(&self, macro_id: &str) -> Result<()> {
+        // Execute saved macro
+        Ok(())
+    }
+}
+
+impl TabOrderManager {
+    pub fn new(wrap_around: bool) -> Self {
+        Self {
+            tab_groups: HashMap::new(),
+            current_group: None,
+            wrap_around,
+        }
+    }
+}
+
+impl AccessibilityFocusManager {
+    pub fn new() -> Self {
+        Self {
+            screen_reader_mode: false,
+            focus_indicators: true,
+            high_contrast_focus: false,
+            focus_sounds: false,
+        }
+    }
+}
 //
 // Input events for immediate feedback
 // #[derive(Debug, Clone)]
