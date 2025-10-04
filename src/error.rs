@@ -2,11 +2,11 @@
 //
 // Provides structured, user-friendly error messages with context.
 
-use std::fmt;
 use thiserror::Error;
 
 /// Main error type for OpenAgent-Terminal
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum TerminalError {
     /// Failed to connect to the Python backend
     #[error("Failed to connect to backend at {path}\n\n\
@@ -105,6 +105,7 @@ pub enum TerminalError {
     Other(String),
 }
 
+#[allow(dead_code)]
 impl TerminalError {
     /// Create a backend connection error
     pub fn backend_connection(path: impl Into<String>, source: std::io::Error) -> Self {
@@ -160,9 +161,11 @@ impl TerminalError {
 }
 
 /// Result type alias using TerminalError
+#[allow(dead_code)]
 pub type Result<T> = std::result::Result<T, TerminalError>;
 
 /// Retry configuration for operations
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
     /// Maximum number of retry attempts
@@ -189,6 +192,7 @@ impl Default for RetryConfig {
     }
 }
 
+#[allow(dead_code)]
 impl RetryConfig {
     /// Create a retry config for connection attempts
     pub fn for_connection() -> Self {
