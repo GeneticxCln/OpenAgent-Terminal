@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .agent_handler import AgentHandler
+from .session import Message, MessageRole, SessionManager
 from .tool_handler import ToolHandler
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,11 @@ class TerminalBridge:
         self.demo_mode = demo_mode
         self.agent_handler = AgentHandler()
         self.tool_handler = ToolHandler(demo_mode=demo_mode)
+        self.session_manager = SessionManager()
+        self.current_session = self.session_manager.create_session()
         self.active_streams = {}  # query_id -> writer for streaming responses
+        
+        logger.info(f"📝 Session created: {self.current_session.metadata.session_id}")
 
     async def start(self):
         """Start the IPC server."""
@@ -139,6 +144,14 @@ class TerminalBridge:
                 result = await self.handle_agent_cancel(params)
             elif method == "tool.approve":
                 result = await self.handle_tool_approve(params)
+            elif method == "session.list":
+                result = await self.handle_session_list(params)
+            elif method == "session.load":
+                result = await self.handle_session_load(params)
+            elif method == "session.export":
+                result = await self.handle_session_export(params)
+            elif method == "session.delete":
+                result = await self.handle_session_delete(params)
             else:
                 return self.create_error_response(
                     request_id, -32601, f"Method not found: {method}"
@@ -197,6 +210,18 @@ class TerminalBridge:
         
         logger.info(f"🤖 Starting agent query {query_id}: {message[:50]}...")
         
+        # Save user message to session
+        from datetime import datetime
+        user_msg = Message(
+            role=MessageRole.USER,
+            content=message,
+            timestamp=datetime.now(),
+            metadata={"query_id": query_id}
+        )
+        self.current_session.add_message(user_msg)
+        self.session_manager.save_session(self.current_session)
+        logger.debug(f"💾 Saved user message to session {self.current_session.metadata.session_id}")
+        
         # Start streaming task in background
         task = asyncio.create_task(
             self._stream_agent_response(query_id, message, context, writer)
@@ -215,6 +240,9 @@ class TerminalBridge:
         """
         Background task that streams agent response tokens.
         """
+        from datetime import datetime
+        assistant_response_content = []  # Collect response for session
+        
         try:
             # Get streaming response from agent
             async for token_data in self.agent_handler.query(query_id, message, context):
@@ -280,6 +308,8 @@ class TerminalBridge:
                         },
                     }
                     logger.debug(f"📤 Token: {token_data['content'][:30]}...")
+                    # Collect content for session
+                    assistant_response_content.append(token_data["content"])
                 
                 # Send notification
                 notification_json = json.dumps(notification) + "\n"
@@ -298,6 +328,20 @@ class TerminalBridge:
             complete_json = json.dumps(complete_notification) + "\n"
             writer.write(complete_json.encode("utf-8"))
             await writer.drain()
+            
+            # Save assistant response to session
+            if assistant_response_content:
+                full_response = "".join(assistant_response_content)
+                assistant_msg = Message(
+                    role=MessageRole.ASSISTANT,
+                    content=full_response,
+                    timestamp=datetime.now(),
+                    token_count=len(full_response.split()),  # Simple word count
+                    metadata={"query_id": query_id}
+                )
+                self.current_session.add_message(assistant_msg)
+                self.session_manager.save_session(self.current_session)
+                logger.debug(f"💾 Saved assistant response ({len(full_response)} chars) to session")
             
             logger.info(f"✅ Query {query_id} complete")
             
@@ -355,6 +399,107 @@ class TerminalBridge:
             result = await self.tool_handler.reject_tool(execution_id)
         
         return result
+    
+    async def handle_session_list(self, params: dict) -> dict:
+        """Handle session.list request."""
+        limit = params.get("limit", 10)
+        
+        try:
+            sessions = self.session_manager.list_sessions(limit=limit)
+            return {
+                "status": "success",
+                "sessions": [
+                    {
+                        "session_id": s.session_id,
+                        "title": s.title,
+                        "created_at": s.created_at.isoformat(),
+                        "updated_at": s.updated_at.isoformat(),
+                        "message_count": s.message_count,
+                        "total_tokens": s.total_tokens,
+                    }
+                    for s in sessions
+                ]
+            }
+        except Exception as e:
+            logger.error(f"Error listing sessions: {e}")
+            return {"status": "error", "error": str(e)}
+    
+    async def handle_session_load(self, params: dict) -> dict:
+        """Handle session.load request."""
+        session_id = params.get("session_id")
+        
+        if not session_id:
+            return {"status": "error", "error": "session_id required"}
+        
+        try:
+            session = self.session_manager.load_session(session_id)
+            if session:
+                self.current_session = session
+                logger.info(f"📂 Loaded session: {session_id} ({len(session.messages)} messages)")
+                return {
+                    "status": "success",
+                    "session_id": session.metadata.session_id,
+                    "message_count": len(session.messages),
+                    "messages": [
+                        {
+                            "role": msg.role.value,
+                            "content": msg.content,
+                            "timestamp": msg.timestamp.isoformat(),
+                            "token_count": msg.token_count,
+                        }
+                        for msg in session.messages
+                    ]
+                }
+            else:
+                return {"status": "error", "error": f"Session {session_id} not found"}
+        except Exception as e:
+            logger.error(f"Error loading session: {e}")
+            return {"status": "error", "error": str(e)}
+    
+    async def handle_session_export(self, params: dict) -> dict:
+        """Handle session.export request."""
+        session_id = params.get("session_id")
+        format_type = params.get("format", "markdown")
+        
+        try:
+            # Use current session if no session_id specified
+            if session_id:
+                session = self.session_manager.load_session(session_id)
+                if not session:
+                    return {"status": "error", "error": f"Session {session_id} not found"}
+            else:
+                session = self.current_session
+            
+            if format_type == "markdown":
+                content = self.session_manager.export_to_markdown(session)
+                return {
+                    "status": "success",
+                    "format": "markdown",
+                    "content": content
+                }
+            else:
+                return {"status": "error", "error": f"Unsupported format: {format_type}"}
+        except Exception as e:
+            logger.error(f"Error exporting session: {e}")
+            return {"status": "error", "error": str(e)}
+    
+    async def handle_session_delete(self, params: dict) -> dict:
+        """Handle session.delete request."""
+        session_id = params.get("session_id")
+        
+        if not session_id:
+            return {"status": "error", "error": "session_id required"}
+        
+        try:
+            success = self.session_manager.delete_session(session_id)
+            if success:
+                logger.info(f"🗑️  Deleted session: {session_id}")
+                return {"status": "success", "deleted": session_id}
+            else:
+                return {"status": "error", "error": f"Failed to delete session {session_id}"}
+        except Exception as e:
+            logger.error(f"Error deleting session: {e}")
+            return {"status": "error", "error": str(e)}
 
     def create_response(self, request_id: Any, result: Any) -> dict:
         """Create a JSON-RPC success response."""
