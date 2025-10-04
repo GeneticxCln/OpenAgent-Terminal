@@ -105,6 +105,10 @@ class Session:
         self.metadata.updated_at = datetime.now()
         if message.token_count:
             self.metadata.total_tokens += message.token_count
+        
+        # Auto-generate title from first user message
+        if self.metadata.title is None and message.role == MessageRole.USER and len(self.messages) == 1:
+            self.metadata.title = self._generate_title(message.content)
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
@@ -120,6 +124,25 @@ class Session:
             metadata=SessionMetadata.from_dict(data["metadata"]),
             messages=[Message.from_dict(msg) for msg in data["messages"]]
         )
+    
+    def _generate_title(self, content: str) -> str:
+        """Generate a session title from message content.
+        
+        Args:
+            content: Message content to generate title from
+            
+        Returns:
+            Generated title (max 50 chars)
+        """
+        # Remove extra whitespace
+        title = ' '.join(content.split())
+        
+        # Truncate to 50 chars, add ellipsis if needed
+        max_length = 50
+        if len(title) > max_length:
+            title = title[:max_length-3] + "..."
+        
+        return title
 
 
 class SessionManager:

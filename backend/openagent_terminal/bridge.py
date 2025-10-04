@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .agent_handler import AgentHandler
+from .context_manager import ContextManager
 from .session import Message, MessageRole, SessionManager
 from .tool_handler import ToolHandler
 
@@ -45,6 +46,7 @@ class TerminalBridge:
         self.agent_handler = AgentHandler()
         self.tool_handler = ToolHandler(demo_mode=demo_mode)
         self.session_manager = SessionManager()
+        self.context_manager = ContextManager()
         self.current_session = self.session_manager.create_session()
         self.active_streams = {}  # query_id -> writer for streaming responses
         
@@ -203,7 +205,17 @@ class TerminalBridge:
         and immediately returns the query ID.
         """
         message = params.get("message", "")
-        context = params.get("context", {})
+        user_context = params.get("context", {})
+        
+        # Gather environment context
+        cwd = user_context.get("cwd", os.getcwd())
+        env_context = await self.context_manager.get_context(cwd)
+        
+        # Merge user context with environment context
+        context = {
+            **user_context,
+            "environment": env_context.to_dict(),
+        }
         
         # Generate unique query ID
         query_id = str(uuid.uuid4())
