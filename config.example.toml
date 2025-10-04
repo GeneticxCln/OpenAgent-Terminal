@@ -1,0 +1,122 @@
+# OpenAgent-Terminal Configuration File
+# 
+# This is an example configuration showing all available options.
+# Copy this to ~/.config/openagent-terminal/config.toml and customize.
+#
+# To generate a default config file, run:
+#   openagent-terminal --generate-config
+
+# Terminal Display Settings
+[terminal]
+# Font family (must be installed on your system)
+font_family = "DejaVu Sans Mono"
+
+# Font size in points
+font_size = 14
+
+# Color theme (currently: monokai, dracula, solarized)
+# More themes coming in future releases
+theme = "monokai"
+
+# Number of lines to keep in scrollback buffer
+# Higher values use more memory
+scrollback_lines = 10000
+
+# Enable syntax highlighting for code blocks
+# Set to false if you experience performance issues
+syntax_highlighting = true
+
+# AI Agent Configuration
+[agent]
+# Model to use for AI responses
+# Options:
+#   - "mock" - Simulated responses for testing (no LLM required)
+#   - "gpt-4" - OpenAI GPT-4 (requires API key)
+#   - "claude-3" - Anthropic Claude 3 (requires API key)
+#   - "local" - Local model via OpenAgent
+model = "mock"
+
+# Enable automatic command suggestions
+# The AI will suggest commands as you type
+auto_suggest = true
+
+# Require explicit approval before executing any tool
+# STRONGLY RECOMMENDED to leave this as true
+require_approval = true
+
+# Maximum tokens per AI query
+# Higher values allow longer responses but cost more
+max_tokens = 2000
+
+# Temperature for LLM sampling (0.0 - 2.0)
+# Lower = more focused, higher = more creative
+temperature = 0.7
+
+# Keyboard Shortcuts
+[keybindings]
+# Toggle AI assistance pane
+toggle_ai = "Ctrl+A"
+
+# Send query to AI
+send_query = "Enter"
+
+# Cancel current operation
+cancel = "Ctrl+C"
+
+# Clear screen
+clear_screen = "Ctrl+K"
+
+# Show command history
+show_history = "Ctrl+L"
+
+# Tool Execution Settings
+[tools]
+# Enable real file system operations
+# 
+# ⚠️  WARNING: When set to true, tools will actually modify your file system!
+# 
+# Options:
+#   - false (default): Demo mode - tools simulate operations safely
+#   - true: Real mode - tools actually execute (use with caution)
+#
+# You can also use the --execute flag when starting the backend:
+#   python -m backend.openagent_terminal.bridge --execute
+enable_real_execution = false
+
+# Directories where tools are allowed to operate
+# Paths starting with ~ will be expanded to your home directory
+# Tools will be blocked from operating outside these directories
+safe_directories = [
+    "~",     # Your home directory
+    ".",     # Current working directory
+]
+
+# Timeout for shell commands in seconds
+# Commands exceeding this will be terminated
+command_timeout = 10
+
+# Advanced Settings (Optional)
+# Uncomment and modify as needed
+
+# [advanced]
+# # Enable debug logging
+# debug_mode = false
+#
+# # IPC socket path (auto-detected by default)
+# # socket_path = "/run/user/1000/openagent-terminal.sock"
+#
+# # Maximum memory usage in MB (soft limit)
+# max_memory_mb = 500
+#
+# # Enable GPU acceleration (requires wgpu support)
+# gpu_acceleration = true
+
+# API Keys (Optional)
+# Set these as environment variables instead for better security:
+#   export OPENAI_API_KEY="sk-..."
+#   export ANTHROPIC_API_KEY="..."
+#
+# [api_keys]
+# openai = ""
+# anthropic = ""
+# openagent = ""

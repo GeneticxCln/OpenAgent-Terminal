@@ -1,0 +1,76 @@
+[package]
+name = "openagent-terminal"
+version = "0.1.0"
+edition = "2021"
+authors = ["OpenAgent Team"]
+description = "AI-native terminal emulator powered by OpenAgent and GPU-accelerated rendering"
+license = "MIT"
+repository = "https://github.com/yourusername/openagent-terminal"
+keywords = ["terminal", "ai", "agent", "wgpu", "emulator"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+# Core window and rendering (from Portal)
+winit = "0.28"
+wgpu = "0.16"
+wgpu_glyph = "0.20"
+pollster = "0.3"
+bytemuck = "1.14"
+
+# Terminal emulation (from Portal)
+vte = "0.10"
+portable-pty = { version = "0.8", optional = true }
+tattoy-wezterm-term = "0.1.0-fork.5"
+
+# Async runtime and IPC
+tokio = { version = "1.35", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+
+# JSON-RPC and serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+jsonrpc-core = "18.0"
+
+# Unix socket support
+async-net = "2.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+log = "0.4"
+env_logger = "0.10"
+
+# Configuration
+serde_yaml = "0.9"
+toml = "0.8"
+dirs = "4.0"
+
+# Text processing
+unicode-segmentation = "1.11"
+unicode-width = "0.1"
+
+# Syntax highlighting (for blocks)
+syntect = "5.1"
+
+# Optional features
+clap = { version = "4.4", features = ["derive"], optional = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.8"
+
+[features]
+default = ["portable-pty", "cli"]
+cli = ["dep:clap"]
+
+[[bin]]
+name = "openagent-terminal"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
