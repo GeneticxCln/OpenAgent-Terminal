@@ -254,6 +254,7 @@ impl SessionManager {
     }
 
     /// Clear the sessions cache
+    #[allow(dead_code)]  // May be useful for future cache management
     pub fn clear_cache(&mut self) {
         self.sessions_cache.clear();
     }

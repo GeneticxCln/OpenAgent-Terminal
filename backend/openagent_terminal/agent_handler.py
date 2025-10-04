@@ -76,12 +76,12 @@ class AgentHandler:
     ) -> str:
         """
         Mock agent response for Phase 2 testing.
-
+        
         In Phase 3, this will be replaced with actual OpenAgent integration.
         For now, it provides intelligent-looking responses to test streaming.
         """
-        # Simulate thinking time
-        await asyncio.sleep(0.5)
+        # Minimal delay just to yield control (removed 500ms artificial delay)
+        await asyncio.sleep(0.01)
 
         # Generate contextual response based on keywords
         message_lower = message.lower()
@@ -218,9 +218,8 @@ class AgentHandler:
 
                     yield {"content": token, "type": "text"}
 
-                    # Simulate realistic token generation delay
-                    delay = min(0.05 + (len(word) * 0.005), 0.2)
-                    await asyncio.sleep(delay)
+                    # Minimal delay just to yield control (reduced from 50-200ms)
+                    await asyncio.sleep(0.01)
 
     async def cancel_query(self, query_id: str) -> bool:
         """

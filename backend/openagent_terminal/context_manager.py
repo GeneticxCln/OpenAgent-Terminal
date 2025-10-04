@@ -61,10 +61,15 @@ class EnvironmentContext:
         }
 
 
+# Module-level constants
+MAX_FILES_IN_CONTEXT = 20
+MAX_DIRS_IN_CONTEXT = 10
+
+
 class ContextManager:
     """Manages context gathering for AI agent queries."""
     
-    def __init__(self, max_files: int = 20, max_dirs: int = 10):
+    def __init__(self, max_files: int = MAX_FILES_IN_CONTEXT, max_dirs: int = MAX_DIRS_IN_CONTEXT):
         """
         Initialize context manager.
         
@@ -168,10 +173,24 @@ class ContextManager:
                 if item.name.startswith('.'):
                     continue
                 
-                if item.is_file():
-                    files.append(item.name)
-                elif item.is_dir():
-                    dirs.append(item.name)
+                try:
+                    # Handle symlinks safely
+                    if item.is_symlink():
+                        # Skip broken symlinks
+                        if not item.exists():
+                            continue
+                        # Follow symlink to determine type
+                        if item.is_file():
+                            files.append(item.name)
+                        elif item.is_dir():
+                            dirs.append(item.name)
+                    elif item.is_file():
+                        files.append(item.name)
+                    elif item.is_dir():
+                        dirs.append(item.name)
+                except (OSError, PermissionError):
+                    # Skip items we can't access
+                    continue
                 
                 # Limit results
                 if len(files) >= self.max_files and len(dirs) >= self.max_dirs:
@@ -195,13 +214,13 @@ class ContextManager:
             Dictionary with git info or None if not a git repo
         """
         try:
-            # Check if in a git repo
+            # Check if in a git repo (increased timeout for large repos)
             result = subprocess.run(
                 ["git", "rev-parse", "--git-dir"],
                 cwd=cwd,
                 capture_output=True,
                 text=True,
-                timeout=1
+                timeout=5
             )
             
             if result.returncode != 0:
@@ -215,7 +234,7 @@ class ContextManager:
                 cwd=cwd,
                 capture_output=True,
                 text=True,
-                timeout=1
+                timeout=5
             )
             if result.returncode == 0:
                 git_info["branch"] = result.stdout.strip()
@@ -226,7 +245,7 @@ class ContextManager:
                 cwd=cwd,
                 capture_output=True,
                 text=True,
-                timeout=2
+                timeout=5
             )
             if result.returncode == 0:
                 status = result.stdout.strip()

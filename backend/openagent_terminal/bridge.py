@@ -526,9 +526,33 @@ class TerminalBridge:
         }
 
     async def stop(self):
-        """Stop the IPC server and clean up."""
+        """Stop the IPC server and clean up gracefully."""
         logger.info("🛑 Stopping Terminal Bridge...")
         self.running = False
+        
+        # Cancel all active query streams
+        if self.active_streams:
+            logger.info(f"Cancelling {len(self.active_streams)} active queries...")
+            for query_id, task in list(self.active_streams.items()):
+                logger.debug(f"Cancelling query: {query_id}")
+                task.cancel()
+                try:
+                    await asyncio.wait_for(task, timeout=2.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    pass
+                except Exception as e:
+                    logger.warning(f"Error cancelling query {query_id}: {e}")
+            
+            self.active_streams.clear()
+            logger.info("All active queries cancelled")
+        
+        # Save current session before shutdown
+        if self.current_session:
+            try:
+                self.session_manager.save_session(self.current_session)
+                logger.info(f"💾 Saved session: {self.current_session.metadata.session_id}")
+            except Exception as e:
+                logger.error(f"Failed to save session on shutdown: {e}")
 
         if self.server:
             self.server.close()
@@ -538,7 +562,7 @@ class TerminalBridge:
             self.socket_path.unlink()
             logger.info(f"Removed socket at {self.socket_path}")
 
-        logger.info("✅ Terminal Bridge stopped")
+        logger.info("✅ Terminal Bridge stopped gracefully")
 
 
 def main():

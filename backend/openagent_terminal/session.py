@@ -6,6 +6,8 @@ saving and loading session history, metadata tracking, and export functionality.
 
 import json
 import os
+import shutil
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -149,6 +151,28 @@ class Session:
             title = title[:max_length-3] + "..."
         
         return title
+    
+    def _escape_markdown_content(self, content: str) -> str:
+        """Escape markdown special characters in content.
+        
+        Args:
+            content: Content to escape
+            
+        Returns:
+            Escaped content
+        """
+        # Don't escape code blocks
+        if content.strip().startswith("```"):
+            return content
+        
+        # Escape markdown headers at line start
+        lines = []
+        for line in content.split('\n'):
+            if line.startswith('#'):
+                line = '\\' + line
+            lines.append(line)
+        
+        return '\n'.join(lines)
 
 
 class SessionManager:
@@ -195,18 +219,39 @@ class SessionManager:
             self._save_index()
     
     def _save_index(self) -> None:
-        """Save session index."""
+        """Save session index atomically using temp file."""
+        tmp_path = None
         try:
-            with open(self.index_file, 'w', encoding='utf-8') as f:
-                json.dump(self.index, f, indent=2)
+            # Write to temp file first (atomic operation)
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                encoding='utf-8',
+                dir=self.sessions_dir,
+                delete=False,
+                prefix='.index_',
+                suffix='.tmp'
+            ) as tmp:
+                json.dump(self.index, tmp, indent=2)
+                tmp_path = tmp.name
             
-            # Set proper permissions (owner only)
+            # Set proper permissions before moving
             try:
-                os.chmod(self.index_file, 0o600)
+                os.chmod(tmp_path, 0o600)
             except (OSError, AttributeError):
                 pass
+            
+            # Atomic rename (replaces old file)
+            shutil.move(tmp_path, self.index_file)
+            tmp_path = None  # Successfully moved
+            
         except IOError as e:
             print(f"Error saving index: {e}")
+            # Clean up temp file if it exists
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
     
     def create_session(self, title: Optional[str] = None) -> Session:
         """Create new session.
@@ -238,6 +283,14 @@ class SessionManager:
         
         # Add to index
         self.index["sessions"].append(metadata.to_dict())
+        
+        # Auto-cleanup if too many sessions (prevent unbounded growth)
+        if len(self.index["sessions"]) > 1000:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Session limit exceeded ({len(self.index['sessions'])}), cleaning up old sessions")
+            self.cleanup_old_sessions(max_sessions=800)
+        
         self._save_index()
         
         return session
@@ -398,7 +451,7 @@ class SessionManager:
             lines.extend([
                 f"## {emoji} {msg.role.value.title()} [{timestamp}]",
                 "",
-                msg.content,
+                self._escape_markdown_content(msg.content),
                 ""
             ])
             

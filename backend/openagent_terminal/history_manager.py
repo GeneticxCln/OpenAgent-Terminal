@@ -1,10 +1,10 @@
-"""
-Command History Manager - Persistent command history with search capabilities.
+"""Command History Manager - Persistent command history with search capabilities.
 
 This module provides command history management similar to bash/zsh history,
 including persistence, navigation, and reverse search (Ctrl+R).
 """
 
+import fcntl
 import os
 from collections import deque
 from dataclasses import dataclass, field
@@ -55,14 +55,19 @@ class HistoryEntry:
             return None
 
 
+# Module-level constants
+DEFAULT_HISTORY_FILE_SIZE = 10000
+DEFAULT_HISTORY_MEMORY_SIZE = 1000
+
+
 class HistoryManager:
     """Manages command history with persistence and search."""
     
     def __init__(
         self, 
         history_file: Optional[Path] = None,
-        max_size: int = 10000,
-        max_memory: int = 1000
+        max_size: int = DEFAULT_HISTORY_FILE_SIZE,
+        max_memory: int = DEFAULT_HISTORY_MEMORY_SIZE
     ):
         """
         Initialize history manager.
@@ -108,8 +113,8 @@ class HistoryManager:
             command: Command to add
             session_id: Optional session ID
         """
-        # Skip commands starting with space (privacy feature) - check BEFORE stripping
-        if command.startswith(' '):
+        # Skip commands starting with any whitespace (privacy feature) - check BEFORE stripping
+        if command and command[0].isspace():
             return
         
         command = command.strip()
@@ -340,11 +345,17 @@ class HistoryManager:
             logger.error(f"Failed to load history: {e}")
     
     def _append_to_file(self, entry: HistoryEntry) -> None:
-        """Append entry to history file."""
+        """Append entry to history file with file locking."""
         try:
-            # Append to file
+            # Append to file with exclusive lock
             with open(self.history_file, 'a', encoding='utf-8') as f:
-                f.write(entry.to_line())
+                try:
+                    # Acquire exclusive lock (blocks until available)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    f.write(entry.to_line())
+                finally:
+                    # Release lock
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             
             # Check if we need to prune
             if self._get_file_line_count() > self.max_size:
@@ -361,23 +372,31 @@ class HistoryManager:
             return 0
     
     def _prune_history_file(self) -> None:
-        """Prune history file to max_size by removing oldest entries."""
+        """Prune history file to max_size by removing oldest entries with file locking."""
         try:
-            # Read all entries
+            # Read all entries with shared lock
             entries = []
             with open(self.history_file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    entry = HistoryEntry.from_line(line)
-                    if entry:
-                        entries.append(entry)
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                    for line in f:
+                        entry = HistoryEntry.from_line(line)
+                        if entry:
+                            entries.append(entry)
+                finally:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             
             # Keep only most recent max_size entries
             entries = entries[-self.max_size:]
             
-            # Write back
+            # Write back with exclusive lock
             with open(self.history_file, 'w', encoding='utf-8') as f:
-                for entry in entries:
-                    f.write(entry.to_line())
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    for entry in entries:
+                        f.write(entry.to_line())
+                finally:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             
             logger.info(f"Pruned history file to {len(entries)} entries")
         except (IOError, OSError) as e:

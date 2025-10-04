@@ -38,9 +38,9 @@ class Block:
 class BlockFormatter:
     """Formats AI responses into structured blocks."""
 
-    # Regex for markdown code blocks
+    # Regex for markdown code blocks (optimized to prevent catastrophic backtracking)
     CODE_BLOCK_PATTERN = re.compile(
-        r"```(\w+)?\n(.*?)```", re.DOTALL | re.MULTILINE
+        r"```(\w+)?\n((?:(?!```).)*?)```", re.DOTALL | re.MULTILINE
     )
 
     # Regex for diff-like content
