@@ -5,6 +5,7 @@ mod ansi;
 mod config;
 mod error;
 mod ipc;
+mod session;
 
 use anyhow::Result;
 use log::{error, info};

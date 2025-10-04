@@ -47,6 +47,9 @@ serde_yaml = "0.9"
 toml = "0.8"
 dirs = "4.0"
 
+# Date and time
+chrono = { version = "0.4", features = ["serde"] }
+
 # Text processing
 unicode-segmentation = "1.11"
 unicode-width = "0.1"
