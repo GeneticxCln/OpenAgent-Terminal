@@ -145,12 +145,45 @@ class ContextManager:
         return f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     
     def _get_relevant_env_vars(self) -> Dict[str, str]:
-        """Get relevant environment variables."""
+        """Get relevant environment variables with secret filtering.
+        
+        Returns:
+            Dictionary of environment variables with secrets redacted
+        """
+        # Common secret patterns to exclude
+        secret_patterns = [
+            'password', 'secret', 'key', 'token', 'api',
+            'auth', 'credential', 'private', 'passwd'
+        ]
+        
         env_vars = {}
         for var in self.relevant_env_vars:
             value = os.environ.get(var)
-            if value:
+            if not value:
+                continue
+            
+            # Check if variable name suggests it's a secret
+            var_lower = var.lower()
+            is_secret_var = any(pattern in var_lower for pattern in secret_patterns)
+            
+            if is_secret_var:
+                env_vars[var] = "[REDACTED - SECRET]"
+                continue
+            
+            # Check if value looks like a secret (heuristic)
+            value_lower = value.lower()
+            value_looks_secret = any(pattern in value_lower for pattern in secret_patterns)
+            
+            # Also check if value is very long (likely a token/key)
+            # or contains base64-like patterns
+            is_long_token = len(value) > 50 and '=' not in value[:10]  # Basic heuristic
+            has_suspicious_chars = all(c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=-_' for c in value)
+            
+            if value_looks_secret or (is_long_token and has_suspicious_chars and len(value) > 32):
+                env_vars[var] = "[REDACTED - SUSPECTED SECRET]"
+            else:
                 env_vars[var] = value
+        
         return env_vars
     
     def _get_filesystem_info(self, cwd: str) -> tuple[List[str], List[str]]:

@@ -12,7 +12,9 @@ import os
 import signal
 import sys
 import uuid
+from collections import defaultdict
 from pathlib import Path
+from time import time
 from typing import Any, Dict, Optional
 
 from .agent_handler import AgentHandler
@@ -26,13 +28,14 @@ logger = logging.getLogger(__name__)
 class TerminalBridge:
     """IPC server bridge between Rust frontend and OpenAgent backend."""
 
-    def __init__(self, socket_path: str | None = None, demo_mode: bool = True):
+    def __init__(self, socket_path: str | None = None, demo_mode: bool = True, max_queries_per_minute: int = 20):
         """
         Initialize the terminal bridge.
 
         Args:
             socket_path: Path to Unix socket. If None, auto-generate.
             demo_mode: If True, tools run in safe demo mode. If False, real execution.
+            max_queries_per_minute: Maximum queries allowed per client per minute (rate limiting)
         """
         if socket_path is None:
             runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
@@ -49,6 +52,10 @@ class TerminalBridge:
         self.context_manager = ContextManager()
         self.current_session = self.session_manager.create_session()
         self.active_streams = {}  # query_id -> writer for streaming responses
+        
+        # Rate limiting
+        self.max_queries_per_minute = max_queries_per_minute
+        self.query_timestamps = defaultdict(list)  # client_id -> [timestamps]
         
         logger.info(f"📝 Session created: {self.current_session.metadata.session_id}")
 
@@ -199,11 +206,23 @@ class TerminalBridge:
 
     async def handle_agent_query(self, params: dict, request_id: Any, writer: asyncio.StreamWriter) -> dict:
         """
-        Handle agent.query request.
+        Handle agent.query request with rate limiting.
         
         This spawns a background task to stream tokens back to the client
         and immediately returns the query ID.
         """
+        # Check rate limit first
+        client_addr = writer.get_extra_info("peername") or "unknown"
+        client_id = str(client_addr)  # Use socket address as client ID
+        
+        if not self._check_rate_limit(client_id):
+            logger.warning(f"Rate limit exceeded for client {client_id}")
+            return {
+                "error": f"Rate limit exceeded. Maximum {self.max_queries_per_minute} queries per minute.",
+                "query_id": None,
+                "status": "rate_limited"
+            }
+        
         message = params.get("message", "")
         user_context = params.get("context", {})
         
@@ -524,6 +543,31 @@ class TerminalBridge:
             "id": request_id,
             "error": {"code": code, "message": message},
         }
+    
+    def _check_rate_limit(self, client_id: str) -> bool:
+        """Check if client is within rate limit.
+        
+        Args:
+            client_id: Client identifier (usually socket address)
+            
+        Returns:
+            True if within limit, False if rate limited
+        """
+        now = time()
+        
+        # Clean old timestamps (older than 60 seconds)
+        self.query_timestamps[client_id] = [
+            ts for ts in self.query_timestamps[client_id]
+            if now - ts < 60
+        ]
+        
+        # Check if exceeds limit
+        if len(self.query_timestamps[client_id]) >= self.max_queries_per_minute:
+            return False
+        
+        # Add current timestamp
+        self.query_timestamps[client_id].append(now)
+        return True
 
     async def stop(self):
         """Stop the IPC server and clean up gracefully."""
