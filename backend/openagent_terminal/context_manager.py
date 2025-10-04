@@ -1,10 +1,10 @@
-"""
-Context Manager - Gather environment information for AI agent.
+"""Context Manager - Gather environment information for AI agent.
 
 This module collects relevant context about the user's environment including
 working directory, git status, recent commands, and environment variables.
 """
 
+import asyncio
 import os
 import subprocess
 from dataclasses import dataclass, field
@@ -89,6 +89,8 @@ class ContextManager:
         """
         Gather complete environment context.
         
+        Non-blocking: All I/O operations run in thread pool to avoid blocking event loop.
+        
         Args:
             cwd: Current working directory. If None, uses process cwd.
             
@@ -100,23 +102,27 @@ class ContextManager:
         
         context = EnvironmentContext(cwd=cwd)
         
-        # Gather all context in parallel (conceptually)
-        context.platform = self._get_platform()
-        context.shell = self._get_shell()
-        context.python_version = self._get_python_version()
-        context.relevant_env_vars = self._get_relevant_env_vars()
+        # Get event loop for running blocking operations in executor
+        loop = asyncio.get_event_loop()
         
-        # Get filesystem info
-        context.files_in_directory, context.subdirectories = self._get_filesystem_info(cwd)
+        # Run all blocking I/O operations in thread pool (non-blocking)
+        context.platform = await loop.run_in_executor(None, self._get_platform)
+        context.shell = await loop.run_in_executor(None, self._get_shell)
+        context.python_version = await loop.run_in_executor(None, self._get_python_version)
+        context.relevant_env_vars = await loop.run_in_executor(None, self._get_relevant_env_vars)
         
-        # Get git info if in a git repo
-        git_info = self._get_git_info(cwd)
+        # Get filesystem info in executor (non-blocking)
+        fs_result = await loop.run_in_executor(None, self._get_filesystem_info, cwd)
+        context.files_in_directory, context.subdirectories = fs_result
+        
+        # Get git info in executor (non-blocking)
+        git_info = await loop.run_in_executor(None, self._get_git_info, cwd)
         if git_info:
             context.git_branch = git_info.get("branch")
             context.git_status = git_info.get("status")
             context.git_uncommitted_changes = git_info.get("uncommitted_changes", False)
         
-        logger.debug(f"Context gathered for: {cwd}")
+        logger.debug(f"Context gathered for: {cwd} (non-blocking)")
         return context
     
     def _get_platform(self) -> str:

@@ -211,14 +211,26 @@ impl IpcClient {
             .map_err(|_| IpcError::ConnectionError("Write channel closed".to_string()))?;
         
         // Wait for response with timeout
-        let response = tokio::time::timeout(
+        let result = tokio::time::timeout(
             std::time::Duration::from_secs(30), 
             rx
-        ).await
-        .map_err(|_| IpcError::Timeout)?
-        .map_err(|_| IpcError::InternalError("Response channel closed".to_string()))??;
+        ).await;
         
-        Ok(response)
+        // Clean up pending request on timeout to prevent memory leak
+        match result {
+            Ok(response_result) => {
+                // Response received before timeout
+                response_result
+                    .map_err(|_| IpcError::InternalError("Response channel closed".to_string()))?
+            }
+            Err(_) => {
+                // Timeout occurred - clean up pending request to prevent memory leak!
+                let mut pending = self.pending_requests.lock().unwrap();
+                pending.remove(&request_id);
+                warn!("Request {} timed out after 30s, cleaned up pending entry", request_id);
+                Err(IpcError::Timeout)
+            }
+        }
     }
 
     /// Check for incoming notifications (non-blocking)

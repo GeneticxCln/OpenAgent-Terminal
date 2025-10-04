@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from threading import Lock
 from typing import Any, Dict, List, Optional
 
 
@@ -97,18 +98,23 @@ class Session:
     """Complete session with messages and metadata."""
     metadata: SessionMetadata
     messages: List[Message] = field(default_factory=list)
+    _lock: Lock = field(default_factory=Lock, init=False, repr=False)
     
     def add_message(self, message: Message) -> None:
-        """Add message and update metadata."""
-        self.messages.append(message)
-        self.metadata.message_count = len(self.messages)
-        self.metadata.updated_at = datetime.now()
-        if message.token_count:
-            self.metadata.total_tokens += message.token_count
+        """Add message and update metadata.
         
-        # Auto-generate title from first user message
-        if self.metadata.title is None and message.role == MessageRole.USER and len(self.messages) == 1:
-            self.metadata.title = self._generate_title(message.content)
+        Thread-safe: Uses internal lock to prevent race conditions.
+        """
+        with self._lock:
+            self.messages.append(message)
+            self.metadata.message_count = len(self.messages)
+            self.metadata.updated_at = datetime.now()
+            if message.token_count:
+                self.metadata.total_tokens += message.token_count
+            
+            # Auto-generate title from first user message
+            if self.metadata.title is None and message.role == MessageRole.USER and len(self.messages) == 1:
+                self.metadata.title = self._generate_title(message.content)
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
