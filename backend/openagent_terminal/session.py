@@ -451,7 +451,7 @@ class SessionManager:
             lines.extend([
                 f"## {emoji} {msg.role.value.title()} [{timestamp}]",
                 "",
-                self._escape_markdown_content(msg.content),
+                session._escape_markdown_content(msg.content),
                 ""
             ])
             

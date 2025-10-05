@@ -461,29 +461,49 @@ class ToolHandler:
         Check if a path is safe to operate on.
         
         Safety rules:
-        - Must be within current working directory or user's home
+        - Must be within current working directory or user's home (using realpath to resolve symlinks)
         - Cannot access system directories
-        - Cannot use .. to escape
+        - Cannot use .. to escape or use symlinks to escape
         """
         try:
-            # Resolve to absolute path
-            abs_path = os.path.abspath(path)
+            # Resolve to real absolute path (follows symlinks)
+            abs_path = os.path.realpath(os.path.abspath(path))
             
-            # Get safe directories
-            cwd = os.getcwd()
-            home = os.path.expanduser("~")
+            # Get safe directories (also resolve to handle symlinks)
+            cwd = os.path.realpath(os.getcwd())
+            home = os.path.realpath(os.path.expanduser("~"))
             
-            # Check if path is within CWD or home
-            if abs_path.startswith(cwd) or abs_path.startswith(home):
-                # Additional check: no access to system directories
-                forbidden = ["/etc", "/sys", "/proc", "/dev", "/boot"]
-                for forbidden_dir in forbidden:
-                    if abs_path.startswith(forbidden_dir):
-                        return False
-                return True
+            # Check if path is within CWD or home using commonpath
+            # This prevents prefix tricks like /home/user vs /home/user-evil
+            is_in_cwd = False
+            is_in_home = False
             
-            return False
+            try:
+                common_cwd = os.path.commonpath([abs_path, cwd])
+                is_in_cwd = (common_cwd == cwd)
+            except (ValueError, TypeError):
+                # Different drives on Windows or invalid paths
+                pass
+            
+            try:
+                common_home = os.path.commonpath([abs_path, home])
+                is_in_home = (common_home == home)
+            except (ValueError, TypeError):
+                pass
+            
+            if not (is_in_cwd or is_in_home):
+                return False
+            
+            # Additional check: block system directories even if somehow under home/cwd
+            forbidden = ["/etc", "/sys", "/proc", "/dev", "/boot", "/root"]
+            for forbidden_dir in forbidden:
+                forbidden_real = os.path.realpath(forbidden_dir) if os.path.exists(forbidden_dir) else forbidden_dir
+                if abs_path == forbidden_real or abs_path.startswith(forbidden_real + os.sep):
+                    return False
+            
+            return True
         except Exception:
+            # Any exception in path resolution -> deny for safety
             return False
 
     def get_stats(self) -> Dict[str, Any]:

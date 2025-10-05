@@ -50,14 +50,19 @@ class TerminalBridge:
         self.tool_handler = ToolHandler(demo_mode=demo_mode)
         self.session_manager = SessionManager()
         self.context_manager = ContextManager()
-        self.current_session = self.session_manager.create_session()
+        # Lazy session creation: only create when first query arrives
+        self.current_session = None
         self.active_streams = {}  # query_id -> writer for streaming responses
         
         # Rate limiting
         self.max_queries_per_minute = max_queries_per_minute
         self.query_timestamps = defaultdict(list)  # client_id -> [timestamps]
         
-        logger.info(f"📝 Session created: {self.current_session.metadata.session_id}")
+        # Write lock per connection to prevent interleaved JSON lines
+        self.connection_locks = {}  # writer id -> asyncio.Lock
+        
+        # Client ID tracking for rate limiting (Unix sockets don't have reliable peername)
+        self.connection_client_ids = {}  # writer id -> unique client identifier
 
     async def start(self):
         """Start the IPC server."""
@@ -89,6 +94,15 @@ class TerminalBridge:
         """Handle incoming connection from Rust frontend."""
         addr = writer.get_extra_info("peername")
         logger.info(f"📞 New connection from {addr}")
+        
+        # Create write lock for this connection
+        writer_id = id(writer)
+        self.connection_locks[writer_id] = asyncio.Lock()
+        
+        # Assign unique client ID for rate limiting (peername is often None for Unix sockets)
+        import uuid
+        client_id = str(uuid.uuid4())
+        self.connection_client_ids[writer_id] = client_id
 
         try:
             while True:
@@ -108,10 +122,12 @@ class TerminalBridge:
                     # Check if it's a request (has 'id') or notification (no 'id')
                     if "id" in data:
                         response = await self.handle_request(data, writer)
-                        # Send response
+                        # Send response (with lock to prevent interleaving)
                         response_json = json.dumps(response) + "\n"
-                        writer.write(response_json.encode("utf-8"))
-                        await writer.drain()
+                        writer_id = id(writer)
+                        async with self.connection_locks.get(writer_id, asyncio.Lock()):
+                            writer.write(response_json.encode("utf-8"))
+                            await writer.drain()
                         logger.debug(f"📤 Sent: {response_json.strip()}")
                     else:
                         # It's a notification, handle but don't respond
@@ -122,14 +138,23 @@ class TerminalBridge:
                     error_response = self.create_error_response(
                         None, -32700, f"Parse error: {e}"
                     )
-                    writer.write((json.dumps(error_response) + "\n").encode("utf-8"))
-                    await writer.drain()
+                    writer_id = id(writer)
+                    async with self.connection_locks.get(writer_id, asyncio.Lock()):
+                        writer.write((json.dumps(error_response) + "\n").encode("utf-8"))
+                        await writer.drain()
                 except Exception as e:
                     logger.error(f"Error handling message: {e}", exc_info=True)
 
         except Exception as e:
             logger.error(f"Connection error: {e}", exc_info=True)
         finally:
+            # Clean up connection lock and client ID
+            writer_id = id(writer)
+            if writer_id in self.connection_locks:
+                del self.connection_locks[writer_id]
+            if writer_id in self.connection_client_ids:
+                del self.connection_client_ids[writer_id]
+            
             writer.close()
             await writer.wait_closed()
             logger.info("Connection closed")
@@ -211,9 +236,9 @@ class TerminalBridge:
         This spawns a background task to stream tokens back to the client
         and immediately returns the query ID.
         """
-        # Check rate limit first
-        client_addr = writer.get_extra_info("peername") or "unknown"
-        client_id = str(client_addr)  # Use socket address as client ID
+        # Check rate limit first (use connection-specific client ID for Unix sockets)
+        writer_id = id(writer)
+        client_id = self.connection_client_ids.get(writer_id, "unknown")
         
         if not self._check_rate_limit(client_id):
             logger.warning(f"Rate limit exceeded for client {client_id}")
@@ -240,6 +265,11 @@ class TerminalBridge:
         query_id = str(uuid.uuid4())
         
         logger.info(f"🤖 Starting agent query {query_id}: {message[:50]}...")
+        
+        # Lazy session creation on first query
+        if self.current_session is None:
+            self.current_session = self.session_manager.create_session()
+            logger.info(f"📝 Created new session: {self.current_session.metadata.session_id}")
         
         # Save user message to session
         from datetime import datetime
@@ -342,10 +372,12 @@ class TerminalBridge:
                     # Collect content for session
                     assistant_response_content.append(token_data["content"])
                 
-                # Send notification
+                # Send notification (with lock to prevent interleaving)
                 notification_json = json.dumps(notification) + "\n"
-                writer.write(notification_json.encode("utf-8"))
-                await writer.drain()
+                writer_id = id(writer)
+                async with self.connection_locks.get(writer_id, asyncio.Lock()):
+                    writer.write(notification_json.encode("utf-8"))
+                    await writer.drain()
             
             # Send stream.complete notification
             complete_notification = {
@@ -357,8 +389,10 @@ class TerminalBridge:
                 },
             }
             complete_json = json.dumps(complete_notification) + "\n"
-            writer.write(complete_json.encode("utf-8"))
-            await writer.drain()
+            writer_id = id(writer)
+            async with self.connection_locks.get(writer_id, asyncio.Lock()):
+                writer.write(complete_json.encode("utf-8"))
+                await writer.drain()
             
             # Save assistant response to session
             if assistant_response_content:
@@ -388,8 +422,10 @@ class TerminalBridge:
                 },
             }
             cancel_json = json.dumps(cancel_notification) + "\n"
-            writer.write(cancel_json.encode("utf-8"))
-            await writer.drain()
+            writer_id = id(writer)
+            async with self.connection_locks.get(writer_id, asyncio.Lock()):
+                writer.write(cancel_json.encode("utf-8"))
+                await writer.drain()
         except Exception as e:
             logger.error(f"❌ Error in query {query_id}: {e}", exc_info=True)
             # Send error notification
@@ -403,8 +439,10 @@ class TerminalBridge:
                 },
             }
             error_json = json.dumps(error_notification) + "\n"
-            writer.write(error_json.encode("utf-8"))
-            await writer.drain()
+            writer_id = id(writer)
+            async with self.connection_locks.get(writer_id, asyncio.Lock()):
+                writer.write(error_json.encode("utf-8"))
+                await writer.drain()
         finally:
             # Clean up
             if query_id in self.active_streams:
