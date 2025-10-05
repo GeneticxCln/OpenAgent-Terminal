@@ -5,9 +5,12 @@ pub mod client;
 pub mod message;
 pub mod error;
 
+#[cfg(test)]
+mod client_tests;
+
 // Re-exports for convenience (used in main.rs)
 #[allow(unused_imports)] // These ARE used in main.rs, false positive warning
-pub use client::IpcClient;
+pub use client::{IpcClient, ConnectionState};
 #[allow(unused_imports)]
 pub use message::{Request, Response, Notification};
 #[allow(unused_imports)]

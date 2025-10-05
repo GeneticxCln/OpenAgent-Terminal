@@ -10,17 +10,17 @@ keywords = ["terminal", "ai", "agent", "wgpu", "emulator"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
-# Core window and rendering (from Portal)
-winit = "0.28"
-wgpu = "0.16"
-wgpu_glyph = "0.20"
-pollster = "0.3"
-bytemuck = "1.14"
+# Core window and rendering (from Portal) - Not used yet, gated behind 'gpu' feature
+winit = { version = "0.28", optional = true }
+wgpu = { version = "0.16", optional = true }
+wgpu_glyph = { version = "0.20", optional = true }
+pollster = { version = "0.3", optional = true }
+bytemuck = { version = "1.14", optional = true }
 
-# Terminal emulation (from Portal)
-vte = "0.10"
+# Terminal emulation (from Portal) - Not used yet, gated behind 'pty' feature
+vte = { version = "0.10", optional = true }
 portable-pty = { version = "0.8", optional = true }
-tattoy-wezterm-term = "0.1.0-fork.5"
+tattoy-wezterm-term = { version = "0.1.0-fork.5", optional = true }
 
 # Async runtime and IPC
 tokio = { version = "1.35", features = ["full"] }
@@ -57,8 +57,9 @@ chrono = { version = "0.4", features = ["serde"] }
 unicode-segmentation = "1.11"
 unicode-width = "0.1"
 
-# Syntax highlighting (for blocks)
-syntect = "5.1"
+# Syntax highlighting (for blocks) - Not used yet, gated behind 'highlight-advanced' feature
+# Currently using simple ANSI-based highlighting
+syntect = { version = "5.1", optional = true }
 
 # Optional features
 clap = { version = "4.4", features = ["derive"], optional = true }
@@ -68,8 +69,23 @@ tokio-test = "0.4"
 tempfile = "3.8"
 
 [features]
-default = ["portable-pty", "cli"]
+# Default features: Only what's actively used in Phase 1
+default = ["cli"]
+
+# GPU rendering (Phase 3+) - Portal-based GPU acceleration
+gpu = ["dep:winit", "dep:wgpu", "dep:wgpu_glyph", "dep:pollster", "dep:bytemuck"]
+
+# PTY support (Phase 2+) - Terminal emulation
+pty = ["dep:vte", "dep:portable-pty", "dep:tattoy-wezterm-term"]
+
+# Advanced syntax highlighting (Phase 3+) - Using syntect library
+highlight-advanced = ["dep:syntect"]
+
+# CLI argument parsing (future) - Not used yet
 cli = ["dep:clap"]
+
+# Full features (for future development)
+full = ["gpu", "pty", "highlight-advanced", "cli"]
 
 [[bin]]
 name = "openagent-terminal"

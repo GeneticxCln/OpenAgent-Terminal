@@ -3,6 +3,20 @@
 // Provides simple syntax highlighting using ANSI escape codes.
 // This is Phase 3 - later we'll use GPU rendering with syntect.
 
+use crossterm::terminal;
+
+/// Get the current terminal width, clamped to reasonable bounds
+fn get_terminal_width() -> usize {
+    match terminal::size() {
+        Ok((cols, _rows)) => {
+            // Clamp between 40 (minimum) and 200 (maximum)
+            // Subtract 2 for border characters and padding
+            (cols as usize).clamp(40, 200).saturating_sub(2)
+        }
+        Err(_) => 78, // Default to 78 if terminal size detection fails
+    }
+}
+
 /// ANSI color codes
 #[allow(dead_code)] // Many colors defined for future use
 pub mod colors {
@@ -277,18 +291,31 @@ impl SyntaxHighlighter {
 /// Format a code block with header and highlighting
 pub fn format_code_block(language: &str, code: &str) -> String {
     let highlighted = SyntaxHighlighter::highlight(code, language);
+    let width = get_terminal_width();
+    
+    // Calculate header: "┌─ language ─" + remaining dashes
+    let header_prefix = format!("┌─ {} ─", language);
+    let header_prefix_len = language.len() + 4; // "┌─  ─"
+    let header_dashes = if width > header_prefix_len {
+        "─".repeat(width.saturating_sub(header_prefix_len))
+    } else {
+        String::new()
+    };
+    
+    // Calculate footer: "└" + dashes
+    let footer_dashes = "─".repeat(width.saturating_sub(1)); // Subtract 1 for └
     
     format!(
-        "\n{}{}┌─ {} ─{}{}────────\n{}\n{}{}└────────────────────────{}{}",
+        "\n{}{}{}{}{}\n{}\n{}{}└{}{}",
         colors::BRIGHT_BLACK,
         colors::DIM,
-        language,
-        "─".repeat(60usize.saturating_sub(language.len())),
+        header_prefix,
+        header_dashes,
         colors::RESET,
         highlighted.trim_end(),
         colors::BRIGHT_BLACK,
         colors::DIM,
-        "─".repeat(60usize),
+        footer_dashes,
         colors::RESET
     )
 }
@@ -296,9 +323,20 @@ pub fn format_code_block(language: &str, code: &str) -> String {
 /// Highlight diff content
 pub fn format_diff(content: &str) -> String {
     let mut result = String::new();
+    let width = get_terminal_width();
     
-    result.push_str(&format!("\n{}{}┌─ Diff ──────────────────────────────────────────────────────{}",
-                            colors::BRIGHT_BLACK, colors::DIM, colors::RESET));
+    // Calculate header: "┌─ Diff ─" + remaining dashes
+    let header_prefix = "┌─ Diff ─";
+    let header_prefix_len = 8; // "┌─ Diff ─"
+    let header_dashes = if width > header_prefix_len {
+        "─".repeat(width.saturating_sub(header_prefix_len))
+    } else {
+        String::new()
+    };
+    
+    result.push_str(&format!("\n{}{}{}{}{}",
+                            colors::BRIGHT_BLACK, colors::DIM, 
+                            header_prefix, header_dashes, colors::RESET));
     result.push('\n');
     
     for line in content.lines() {
@@ -312,8 +350,12 @@ pub fn format_diff(content: &str) -> String {
         }
     }
     
-    result.push_str(&format!("{}{}└──────────────────────────────────────────────────────────────{}",
-                            colors::BRIGHT_BLACK, colors::DIM, colors::RESET));
+    // Calculate footer: "└" + dashes
+    let footer_dashes = "─".repeat(width.saturating_sub(1));
+    
+    result.push_str(&format!("{}{}└{}{}",
+                            colors::BRIGHT_BLACK, colors::DIM, 
+                            footer_dashes, colors::RESET));
     result.push('\n');
     
     result

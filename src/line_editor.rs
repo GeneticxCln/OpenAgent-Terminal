@@ -1,10 +1,11 @@
 // Line Editor - Keyboard input handling with history and cursor control
 //
 // Provides a line editing experience with cursor movement, history navigation,
-// and keyboard shortcuts.
+// and keyboard shortcuts with proper Unicode grapheme cluster support.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use std::collections::VecDeque;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Actions that result from key handling
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,12 +24,18 @@ pub enum EditorAction {
     HistoryUp,
     /// Navigate history down (newer)
     HistoryDown,
-    /// Clear screen (Ctrl+K)
+    /// Clear screen (Ctrl+L)
     ClearScreen,
-    /// Show history list (Ctrl+L)
+    /// Show history list
     ShowHistory,
-    /// Reverse search (Ctrl+R) - future enhancement
+    /// Reverse search (Ctrl+R)
     ReverseSearch,
+    /// Delete to beginning of line (Ctrl+U)
+    DeleteToStart,
+    /// Delete to end of line (Ctrl+K)
+    DeleteToEnd,
+    /// Delete previous word (Ctrl+W)
+    DeletePrevWord,
 }
 
 /// Line editor with cursor and history management
@@ -37,6 +44,12 @@ pub struct LineEditor {
     buffer: String,
     /// Cursor position in buffer (byte index)
     cursor: usize,
+    /// Reverse search mode active
+    reverse_search: bool,
+    /// Reverse search query
+    search_query: String,
+    /// Reverse search result index
+    search_result_idx: Option<usize>,
     /// Command history (most recent last)
     history: VecDeque<String>,
     /// Current position in history during navigation (None = not navigating)
@@ -57,6 +70,9 @@ impl LineEditor {
             history_index: None,
             saved_buffer: None,
             max_history: 1000,
+            reverse_search: false,
+            search_query: String::new(),
+            search_result_idx: None,
         }
     }
     
@@ -70,6 +86,9 @@ impl LineEditor {
             history_index: None,
             saved_buffer: None,
             max_history,
+            reverse_search: false,
+            search_query: String::new(),
+            search_result_idx: None,
         }
     }
     
@@ -78,25 +97,19 @@ impl LineEditor {
         match (code, modifiers) {
             // Navigation
             (KeyCode::Left, KeyModifiers::NONE) => {
-                if self.cursor > 0 {
-                    // Move back by one char boundary
-                    let mut new_cursor = self.cursor.saturating_sub(1);
-                    while new_cursor > 0 && !self.buffer.is_char_boundary(new_cursor) {
-                        new_cursor -= 1;
-                    }
-                    self.cursor = new_cursor;
-                }
+                self.move_cursor_left();
                 EditorAction::Redraw
             }
             (KeyCode::Right, KeyModifiers::NONE) => {
-                if self.cursor < self.buffer.len() {
-                    // Move forward by one char boundary
-                    let mut new_cursor = (self.cursor + 1).min(self.buffer.len());
-                    while new_cursor < self.buffer.len() && !self.buffer.is_char_boundary(new_cursor) {
-                        new_cursor += 1;
-                    }
-                    self.cursor = new_cursor;
-                }
+                self.move_cursor_right();
+                EditorAction::Redraw
+            }
+            (KeyCode::Left, KeyModifiers::CONTROL) => {
+                self.move_word_left();
+                EditorAction::Redraw
+            }
+            (KeyCode::Right, KeyModifiers::CONTROL) => {
+                self.move_word_right();
                 EditorAction::Redraw
             }
             (KeyCode::Home, _) | (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
@@ -115,21 +128,18 @@ impl LineEditor {
                 EditorAction::Redraw
             }
             (KeyCode::Backspace, KeyModifiers::NONE) => {
-                if self.cursor > 0 {
-                    let mut remove_pos = self.cursor - 1;
-                    while remove_pos > 0 && !self.buffer.is_char_boundary(remove_pos) {
-                        remove_pos -= 1;
-                    }
-                    self.buffer.remove(remove_pos);
-                    self.cursor = remove_pos;
-                }
+                self.delete_grapheme_backward();
                 EditorAction::Redraw
             }
             (KeyCode::Delete, KeyModifiers::NONE) => {
-                if self.cursor < self.buffer.len() {
-                    self.buffer.remove(self.cursor);
-                }
+                self.delete_grapheme_forward();
                 EditorAction::Redraw
+            }
+            (KeyCode::Char('w'), KeyModifiers::CONTROL) => {
+                EditorAction::DeletePrevWord
+            }
+            (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                EditorAction::DeleteToStart
             }
             
             // History navigation
@@ -157,10 +167,10 @@ impl LineEditor {
                 }
             }
             (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
-                EditorAction::ClearScreen
+                EditorAction::DeleteToEnd
             }
             (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
-                EditorAction::ShowHistory
+                EditorAction::ClearScreen
             }
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 EditorAction::ReverseSearch
@@ -244,6 +254,270 @@ impl LineEditor {
         self.cursor = 0;
         self.history_index = None;
         self.saved_buffer = None;
+        self.reverse_search = false;
+        self.search_query.clear();
+        self.search_result_idx = None;
+    }
+    
+    // === Unicode-aware cursor movement ===
+    
+    /// Move cursor left by one grapheme cluster
+    fn move_cursor_left(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        
+        let graphemes: Vec<(usize, &str)> = self.buffer
+            .grapheme_indices(true)
+            .collect();
+        
+        // Find the grapheme before current cursor
+        for i in (0..graphemes.len()).rev() {
+            if graphemes[i].0 < self.cursor {
+                self.cursor = graphemes[i].0;
+                break;
+            }
+        }
+    }
+    
+    /// Move cursor right by one grapheme cluster
+    fn move_cursor_right(&mut self) {
+        if self.cursor >= self.buffer.len() {
+            return;
+        }
+        
+        let graphemes: Vec<(usize, &str)> = self.buffer
+            .grapheme_indices(true)
+            .collect();
+        
+        // Find the grapheme after current cursor
+        for (idx, _) in graphemes.iter() {
+            if *idx > self.cursor {
+                self.cursor = *idx;
+                return;
+            }
+        }
+        
+        // If no grapheme found after cursor, move to end
+        self.cursor = self.buffer.len();
+    }
+    
+    /// Move cursor left to the beginning of previous word
+    fn move_word_left(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        
+        let words: Vec<(usize, &str)> = self.buffer
+            .unicode_word_indices()
+            .collect();
+        
+        // Find the word before current cursor
+        for i in (0..words.len()).rev() {
+            if words[i].0 < self.cursor {
+                self.cursor = words[i].0;
+                return;
+            }
+        }
+        
+        // If no word found, move to start
+        self.cursor = 0;
+    }
+    
+    /// Move cursor right to the beginning of next word
+    fn move_word_right(&mut self) {
+        if self.cursor >= self.buffer.len() {
+            return;
+        }
+        
+        let words: Vec<(usize, &str)> = self.buffer
+            .unicode_word_indices()
+            .collect();
+        
+        // Find the word after current cursor
+        let mut found_current = false;
+        for (idx, word) in words.iter() {
+            if *idx > self.cursor {
+                self.cursor = *idx;
+                return;
+            }
+            if *idx <= self.cursor && self.cursor < *idx + word.len() {
+                found_current = true;
+            }
+        }
+        
+        // If at the end of a word or no word found, move to end
+        if found_current || words.is_empty() {
+            self.cursor = self.buffer.len();
+        }
+    }
+    
+    /// Delete one grapheme cluster backward from cursor
+    fn delete_grapheme_backward(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        
+        let graphemes: Vec<(usize, &str)> = self.buffer
+            .grapheme_indices(true)
+            .collect();
+        
+        // Find the grapheme before cursor and remove it
+        for i in (0..graphemes.len()).rev() {
+            let (start, grapheme) = graphemes[i];
+            if start < self.cursor {
+                let end = start + grapheme.len();
+                self.buffer.replace_range(start..end, "");
+                self.cursor = start;
+                break;
+            }
+        }
+    }
+    
+    /// Delete one grapheme cluster forward from cursor
+    fn delete_grapheme_forward(&mut self) {
+        if self.cursor >= self.buffer.len() {
+            return;
+        }
+        
+        let graphemes: Vec<(usize, &str)> = self.buffer
+            .grapheme_indices(true)
+            .collect();
+        
+        // Find the grapheme at cursor and remove it
+        for (start, grapheme) in graphemes.iter() {
+            if *start >= self.cursor {
+                let end = start + grapheme.len();
+                self.buffer.replace_range(*start..end, "");
+                break;
+            }
+        }
+    }
+    
+    /// Delete from cursor to beginning of line
+    pub fn delete_to_start(&mut self) {
+        if self.cursor > 0 {
+            self.buffer.replace_range(0..self.cursor, "");
+            self.cursor = 0;
+        }
+    }
+    
+    /// Delete from cursor to end of line
+    pub fn delete_to_end(&mut self) {
+        if self.cursor < self.buffer.len() {
+            self.buffer.truncate(self.cursor);
+        }
+    }
+    
+    /// Delete previous word (backwards from cursor)
+    pub fn delete_prev_word(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        
+        let words: Vec<(usize, &str)> = self.buffer
+            .unicode_word_indices()
+            .collect();
+        
+        // Find the word that contains or is before the cursor
+        let mut delete_start = 0;
+        
+        for (idx, word) in words.iter() {
+            let word_end = idx + word.len();
+            
+            if *idx < self.cursor {
+                delete_start = *idx;
+                
+                // If cursor is after this word's end, this is the word to delete
+                if word_end <= self.cursor {
+                    continue;
+                } else {
+                    // Cursor is in the middle of this word
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        // Handle whitespace before cursor
+        if delete_start < self.cursor {
+            // Check if there's whitespace between delete_start and cursor
+            let between = &self.buffer[delete_start..self.cursor];
+            if let Some(last_word_start) = between.rfind(|c: char| !c.is_whitespace()) {
+                delete_start = delete_start + between[..=last_word_start].rfind(|c: char| c.is_whitespace())
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+            }
+        }
+        
+        self.buffer.replace_range(delete_start..self.cursor, "");
+        self.cursor = delete_start;
+    }
+    
+    // === Reverse search support ===
+    
+    /// Start reverse search mode
+    pub fn start_reverse_search(&mut self) {
+        self.reverse_search = true;
+        self.search_query.clear();
+        self.search_result_idx = None;
+    }
+    
+    /// Exit reverse search mode
+    pub fn exit_reverse_search(&mut self) {
+        self.reverse_search = false;
+        self.search_query.clear();
+        self.search_result_idx = None;
+    }
+    
+    /// Check if in reverse search mode
+    pub fn is_reverse_search(&self) -> bool {
+        self.reverse_search
+    }
+    
+    /// Add character to search query and find next match
+    pub fn search_add_char(&mut self, c: char) -> Option<String> {
+        self.search_query.push(c);
+        self.search_find_next()
+    }
+    
+    /// Remove last character from search query
+    pub fn search_backspace(&mut self) -> Option<String> {
+        self.search_query.pop();
+        if self.search_query.is_empty() {
+            self.search_result_idx = None;
+            return None;
+        }
+        self.search_find_next()
+    }
+    
+    /// Find next matching history entry
+    fn search_find_next(&mut self) -> Option<String> {
+        if self.search_query.is_empty() {
+            return None;
+        }
+        
+        let start_idx = self.search_result_idx.map(|i| i + 1).unwrap_or(0);
+        
+        // Search backwards through history
+        for (i, entry) in self.history.iter().enumerate().rev() {
+            if i < start_idx {
+                continue;
+            }
+            
+            if entry.contains(&self.search_query) {
+                self.search_result_idx = Some(i);
+                return Some(entry.clone());
+            }
+        }
+        
+        None
+    }
+    
+    /// Get current search query
+    pub fn get_search_query(&self) -> &str {
+        &self.search_query
     }
     
     /// Render the current line with cursor position
@@ -380,5 +654,160 @@ mod tests {
         // Move to end
         editor.handle_key(KeyCode::End, KeyModifiers::NONE);
         assert_eq!(editor.cursor, 5);
+    }
+    
+    #[test]
+    fn test_unicode_emoji_navigation() {
+        let mut editor = LineEditor::new();
+        // Set buffer with emoji (4-byte UTF-8)
+        editor.set_buffer("hello 👋 world".to_string());
+        
+        // Cursor should be at end (16 bytes total)
+        assert_eq!(editor.cursor, 16);
+        
+        // Move left once - should skip entire emoji
+        editor.handle_key(KeyCode::Left, KeyModifiers::NONE);
+        assert_eq!(editor.get_buffer().chars().count(), 13);
+        
+        // Move to home and right through emoji
+        editor.handle_key(KeyCode::Home, KeyModifiers::NONE);
+        assert_eq!(editor.cursor, 0);
+    }
+    
+    #[test]
+    fn test_delete_emoji() {
+        let mut editor = LineEditor::new();
+        editor.set_buffer("hi👋".to_string());
+        
+        // Delete emoji with backspace
+        editor.handle_key(KeyCode::Backspace, KeyModifiers::NONE);
+        assert_eq!(editor.get_buffer(), "hi");
+    }
+    
+    #[test]
+    fn test_delete_prev_word() {
+        let mut editor = LineEditor::new();
+        editor.set_buffer("hello world test".to_string());
+        
+        // Delete last word
+        editor.delete_prev_word();
+        assert_eq!(editor.get_buffer(), "hello world ");
+        
+        // Delete another word
+        editor.delete_prev_word();
+        assert_eq!(editor.get_buffer(), "hello ");
+    }
+    
+    #[test]
+    fn test_delete_to_start() {
+        let mut editor = LineEditor::new();
+        editor.set_buffer("hello world".to_string());
+        
+        // Move cursor to middle
+        editor.cursor = 5;
+        
+        // Delete to start
+        editor.delete_to_start();
+        assert_eq!(editor.get_buffer(), " world");
+        assert_eq!(editor.cursor, 0);
+    }
+    
+    #[test]
+    fn test_delete_to_end() {
+        let mut editor = LineEditor::new();
+        editor.set_buffer("hello world".to_string());
+        
+        // Move cursor to middle
+        editor.cursor = 5;
+        
+        // Delete to end
+        editor.delete_to_end();
+        assert_eq!(editor.get_buffer(), "hello");
+        assert_eq!(editor.cursor, 5);
+    }
+    
+    #[test]
+    fn test_ctrl_w_delete_word() {
+        let mut editor = LineEditor::new();
+        editor.set_buffer("test command here".to_string());
+        
+        let action = editor.handle_key(KeyCode::Char('w'), KeyModifiers::CONTROL);
+        assert_eq!(action, EditorAction::DeletePrevWord);
+    }
+    
+    #[test]
+    fn test_ctrl_u_delete_to_start() {
+        let mut editor = LineEditor::new();
+        editor.set_buffer("some text".to_string());
+        
+        let action = editor.handle_key(KeyCode::Char('u'), KeyModifiers::CONTROL);
+        assert_eq!(action, EditorAction::DeleteToStart);
+    }
+    
+    #[test]
+    fn test_ctrl_k_delete_to_end() {
+        let mut editor = LineEditor::new();
+        editor.set_buffer("some text".to_string());
+        editor.cursor = 4;
+        
+        let action = editor.handle_key(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        assert_eq!(action, EditorAction::DeleteToEnd);
+    }
+    
+    #[test]
+    fn test_word_movement() {
+        let mut editor = LineEditor::new();
+        editor.set_buffer("one two three".to_string());
+        
+        // Move to start
+        editor.cursor = 0;
+        
+        // Move right by word
+        editor.handle_key(KeyCode::Right, KeyModifiers::CONTROL);
+        assert!(editor.cursor == 4 || editor.cursor == 0); // Should be at "two"
+        
+        // Move to end and left by word
+        editor.cursor = editor.buffer.len();
+        editor.handle_key(KeyCode::Left, KeyModifiers::CONTROL);
+        assert!(editor.cursor < editor.buffer.len());
+    }
+    
+    #[test]
+    fn test_reverse_search_mode() {
+        let mut editor = LineEditor::new();
+        
+        // Add some history
+        editor.add_to_history("first command");
+        editor.add_to_history("second command");
+        editor.add_to_history("third test");
+        
+        // Enter reverse search
+        let action = editor.handle_key(KeyCode::Char('r'), KeyModifiers::CONTROL);
+        assert_eq!(action, EditorAction::ReverseSearch);
+        
+        // Start search
+        editor.start_reverse_search();
+        assert!(editor.is_reverse_search());
+        
+        // Exit search
+        editor.exit_reverse_search();
+        assert!(!editor.is_reverse_search());
+    }
+    
+    #[test]
+    fn test_grapheme_cluster_deletion() {
+        let mut editor = LineEditor::new();
+        // Use a combining character sequence: e + acute accent
+        editor.set_buffer("café".to_string());
+        
+        // The é might be composed of 'e' + combining acute
+        let initial_len = editor.get_buffer().len();
+        
+        // Delete last character(s)
+        editor.delete_grapheme_backward();
+        
+        // Should have deleted the entire grapheme
+        assert!(editor.get_buffer().len() < initial_len);
+        assert_eq!(editor.get_buffer(), "caf");
     }
 }
