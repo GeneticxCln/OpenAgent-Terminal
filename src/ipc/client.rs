@@ -174,8 +174,7 @@ impl IpcClient {
     pub async fn initialize(&mut self) -> Result<Response, IpcError> {
         info!("🚀 Sending initialize request");
         
-        // TODO: Get actual terminal size
-        let request = Request::initialize(self.next_request_id(), 80, 24);
+        let request = Request::initialize(self.next_request_id());
         
         self.send_request(request).await
     }
@@ -234,6 +233,7 @@ impl IpcClient {
     }
 
     /// Check for incoming notifications (non-blocking)
+    #[allow(dead_code)] // Kept for backward compatibility
     pub async fn poll_notifications(&mut self) -> Result<Vec<Notification>, IpcError> {
         let receiver = self.notification_receiver.as_mut()
             .ok_or_else(|| IpcError::InternalError("Notification receiver not available".to_string()))?;
@@ -245,6 +245,15 @@ impl IpcClient {
         }
         
         Ok(notifications)
+    }
+    
+    /// Wait for the next notification (blocking async)
+    pub async fn next_notification(&mut self) -> Result<Notification, IpcError> {
+        let receiver = self.notification_receiver.as_mut()
+            .ok_or_else(|| IpcError::InternalError("Notification receiver not available".to_string()))?;
+            
+        receiver.recv().await
+            .ok_or_else(|| IpcError::InternalError("Notification channel closed".to_string()))
     }
 
     /// Disconnect and clean up

@@ -62,7 +62,11 @@ impl Request {
     }
 
     /// Create initialize request (see IPC_PROTOCOL.md)
-    pub fn initialize(id: u64, cols: u16, rows: u16) -> Self {
+    /// Uses actual terminal size if available, falls back to defaults
+    pub fn initialize(id: u64) -> Self {
+        // Try to get actual terminal size
+        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+        
         let params = serde_json::json!({
             "protocol_version": "1.0.0",
             "client_info": {
@@ -133,8 +137,11 @@ mod tests {
 
     #[test]
     fn test_initialize_request() {
-        let req = Request::initialize(1, 80, 24);
+        let req = Request::initialize(1);
         assert_eq!(req.method, "initialize");
         assert!(req.params.is_some());
+        // Verify it contains terminal_size
+        let params = req.params.unwrap();
+        assert!(params.get("terminal_size").is_some());
     }
 }
